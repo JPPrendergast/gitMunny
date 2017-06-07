@@ -1,123 +1,183 @@
-from keras.models import Sequential
-from keras.layers.core import Dense, Dropout, Activation
-from keras.layers.recurrent import LSTM
-from keras.optimizers import RMSprop, Adam, Nadam
-from sklearn.preprocessing import StandardScaler
-import talib.abstract as ta
-import backtest as twp
+
+# Standard Python libs
 import pandas as pd
 import numpy as np
-
+from datetime import date
+from time import mktime
 import time
 
-class Model(object):
-    def __init__(self,tsteps = 1, batch_size = 1, num_features = 7, drop = 0.33):
+# Machine Learning Libs
+from sklearn.preprocessing import StandardScaler
+from sklearn.externals import joblib
+from keras.models import Sequential
+from keras.layers.core import Dense, Activation, Dropout
+from keras.layers.recurrent import LSTM
+from keras.optimizers import RMSprop, Adam, Nadam
 
+#Trading libraries
+import talib.abstract as ta
+from poloniex import Poloniex
+from tradingWithPython import backtest as bt
+'''
+Name:           Model
+
+Author:         John Prendergast
+
+Created:        June 6th, 2017
+
+Requirements:
+
+Numpy
+Pandas
+MatplotLib
+scikit-learn
+TA-Lib
+|--Technical Analysis Library
+Keras
+Poloniex
+tradingwithPython
+
+'''
+
+class Model(object):
+    '''
+    Initializes a class with the keras RNN model at the center.
+
+    Inputs:
+
+    - num_features: number of features to feed into the neural net (default : 7)
+    - num_curr    : number of currency pairs to predict on (current default : 1)
+    - drop        : proportion of neurons to drop in each Dropout layer [list]
+
+    ----------------------------------------------------------------------------
+
+    '''
+    def __init__(self, num_features = 7, num_curr = 1, drop = [0.33, 0.33]):
         model = Sequential()
         model.add(LSTM(64,
-                       input_shape = (1, num_features),
-                       return_sequences = True,
-                       stateful = False))
-        model.add(Dropout(dropout))
+                       input_shape=(1, num_features),
+                       return_sequences=True,
+                       stateful=False))
+        model.add(Dropout(drop[0]))
+
         model.add(LSTM(64,
-                       input_shape = (1,num_features),
-                       return_sequences = False,
-                       stateful = False))
-        model.add(Dropout(dropout))
-        model.add(dense(4, init = 'lecun_uniform'))
-        model.add(Activation('relu'))
+                       input_shape=(1, num_features),
+                       return_sequences=False,
+                       stateful=False))
+        model.add(Dropout(drop[1]))
 
-        model.compile(loss = 'rmse', optimizer = adam)
+        model.add(Dense(4, kernel_initializer='lecun_uniform'))
+        model.add(Activation('relu')) #linear output so we can have range of real-valued outputs
+
+        model.compile(loss='mse', optimizer='nadam')
         self.model = model
-        
-    def load_data(filename, quantity, test = False):
-        prices = pd.read_csv(filename)
-        X_train = prices.iloc[-quantity:-round(quantity*0.2),]
-        X_test = prices.iloc[-quantity:,]
-        if test:
-            return X_test
-        else:
-            return X_train
 
-    def init_state(indata, test=False):
-        close = indata['close'].values
+    def load_data(symbol, start, end, period, quantity, is_pkld = False):
+        '''
+        INSERT DOCSTRING HERE
+        '''
+        prices = pd.DataFrame.from_records(Poloniex().returnChartData(currencyPair = symbol, start = start, end = end, period = period), index = 'date')
+        prices.index = pd.to_datetime(prices.index*1e9)
+        self.X_train, self.X_test = self.split_data(prices, min(3000, len(prices)), 0.2)
+
+        return self
+
+    def split_data(data, quantity, test_size):
+        '''
+        INSERT DOCSTRING HERE
+        '''
+        return data.iloc[-quantity:-round(quantity*test_size),], data.iloc[-quantity:,]
+
+    def init_state(X, test = False):
+        '''
+        INSERT DOCSTRING HERE
+        '''
+        close = X['close'].values
         diff = np.diff(close)
         diff = np.insert(diff, 0,0)
-        sma15 = ta.SMA(indata, timeperiod = 15)
-        sma60 = ta.SMA(indata, timeperiod = 60)
-        rsi = ta.RSI(indata, timeperiod = 14)
-        atr = ta.ATR(indata, timeperiod = 14)
+        sma15 = ta.SMA(X, timeperiod = 15)
+        sma60 = ta.SMA(X, timeperiod = 60)
+        rsi = ta.RSI(X, timeperiod = 14)
+        atr = ta.ATR(X, timeperiod = 14)
 
-        x_data = np.column_stack((close, diff, sma15, close-sma15, sma15-sma30, rsi, atr))
-        x_data = np.nan_to_num(x_data)
-        if test:
-            scaler = joblib.load('data/scaler.pkl')
-            x_data = np.expand_dims(scaler.transform(x_data), axis = 1)
-        else:
+        data = np.nan_to_num(np.vstack((close, diff, sma15, close-sma15, sma15-sma60, rsi, atr)))
+        if not test:
             scaler = StandardScaler()
-            x_data = np.expand_dims(scaler.fit_transform(x_data), axis = 1)
-        state = x_data[0:1, 0:1, :]
+            scaled_data = scaler.fit_transform(data)
+            data = np.expand_dims(scaled_data, axis = 1)
+            joblib.dump(scaler, '../data/scaler.pkl')
+        elif test:
+            scaler = joblib.load('../data/scaler.pkl')
+            scaled_data = scaler.transform(data)
+            data = np.expand_dims(scaled_data, axis = 1)
+        data = data.T
+        state = data[0:1,0:1,:]
+        return state, data, close
 
-        self.state, self.x_data, self.close = state, x_data, close
-        return self
 
-    def take_action(state, x_data, action, signal, time_step):
-        time_step += 1
-        if time_step + 1 == x_data.shape[0]:
-            state = x_data[time_step-1:time_step, 0:1, :]
-            terminal_state = 1
-            signal.loc[time_step] = 0
-            return state, time_step, signal, terminal_state
+    def act(state, data, action, trades, step):
+        '''
+        INSERT DOCSTRING HERE
+        '''
+        if step + 2 == data.shape[0]:
+            state = data[step:step+1, 0:1, :]
+            term = True
+            trades.iloc[timestep+1] = 0
 
-        state = x_data[time_step-1: time_step, 0:1, :]
+            return state, step, trades, term
+        state = data[step:step+1, 0:1, :]
+        # Take trade action {0:Hold, 1:Buy, 2:Sell}
         if action == 1:
-            signal.loc[time_step] = 100
+            trades.iloc[step+1] == 1
         elif action == 2:
-            signal.loc[time_step] = -100
+            trades.iloc[step+1] == -1
         else:
-            signal.loc[time_step] = 0
-        terminal_state = 0
+            trades.iloc[step+1 ==0]
+        term = False
+        step += 1
+        return state, step, trades, term
 
-        self.state, self.time_step, self.signal, self.terminal_state = state, time_step, signal, terminal_state
+    def bestow(new_state, step, action, data, trades, term, epoch = 0):
+        '''
+        INSERT DOCSTRING HERE
+        '''
+        bestowal = 0
+        trades = trades.fillna(False)
+        if term == False:
+            b_test = bt.Backtest(pd.Series(data=[i for i in data[step-2:step]], index = trades[step-2:step].index.values),trades[step-2:step], signalType='shares')
+            bestowal = ((b_test.data['price'].iloc[-1] -b_test.data['price'].iloc[-2]) * b_test.data['shares'].iloc[-1])
+        else:
+            b_test = bt.Backtest(pd.Series(data=[i for i in data], index = trades.index.values), trades, signalType='shares')
+            bestowal = b_test.pnl.iloc[-1]
+        return bestowal
 
-    def get_reward(new_state, time_step, action, x_data, signal, terminal_state, evaluate = False, epoch = 0):
-        reward = 0
-        signal.fillna(value = 0, inplace = True)
+    def eval_Q(eval_data, eval_model, epoch = 0):
+        '''
+        INSERT DOCSTRING HERE
+        '''
+        trades = pd.Series(index=np.arange(len(data)))
+        state, data, prices = init_state(eval_data)
+        step = 1
+        term = False
+        go = True
+        while go:
+            q_values = eval_model.predict(state, batch_size = 1)
+            action = np.argmax(qval)
+            state_prime, step, trades, term = act(state, data, action, trades, step)
+            bestowal = bestow(state_prime,step,action,prices, trades, term, epoch = epoch)
+            state = state_prime
+            if not term:
+                go == False
+        return bestowal
 
-        if not evaluate:
-            bt = twp.Backtest(pd.Series(data=[x for x in x_data[time_step-2:time_step]], index = signal[time_step-2:time_step].index.values),signal[time_step-2: time_step], signalType = 'shares')
-            reward = ((bt.data['price'].iloc[-1] - bt.data['price'].iloc[-2])*bt.data['shares'].iloc[-1])
+    def fit(self, epochs = 100):
+        '''
+        INSERT DOCSTRING HERE
+        '''
+        epsilon = 1
+        batchSize = 100
+        buffer = 200
+        replay = []
+        learning_progress = []
 
-        if terminal_state == 1 and evaluate:
-            bt = twp.Backtest(pd.Series(data=[x for x in xdata], index=signal.index.values), signal, signalType='shares')
-            reward = bt.pnl.iloc[-1]
-            plt.figure(figsize=(3,4))
-            bt.plotTrades()
-            plt.axvline(x=400, color='black', linestyle='--')
-            plt.text(250, 400, 'training data')
-            plt.text(450, 400, 'test data')
-            plt.suptitle(str(epoch))
-            plt.savefig('plt/'+str(epoch)+'.png', bbox_inches='tight', pad_inches=1, dpi=72)
-            plt.close('all')
-
-        self.reward = reward
-        return self
-
-    def evaluate_Q(eval_data, eval_model, price_data, epoch = 0):
-        signal = pd.Series(index = np.arange(len(eval_data)))
-        state, x_data, price_data = init_state(eval_data)
-        status = 1
-        terminal_state = 0
-        time_step = 1
-        while status == 1:
-            qval = eval_model.preict(state, batch_size = 1)
-            action = (np.argmax(qval))
-            new_state, time_step, signal, terminal_state = take_action(state, x_data, action, signal, time_step)
-            eval_reward = get_reward(new_state, time_step, action, price_data, signal, terminal_state, evaluate = True, epoch = epoch)
-            state = new_state
-            if terminal_state == 1:
-                status = 0
-        self.eval_reward = eval_reward
-        return self
-
-    def fit(data, epochs = 100):
+        
