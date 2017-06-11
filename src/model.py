@@ -249,7 +249,7 @@ class Model(object):
         #reinforcement learning parameters
         gamma = 0.95
         explore = 1
-        mem_chunk = 20
+        mem_chunk = 100
 
         # "memory"
         buffer = 200
@@ -263,7 +263,6 @@ class Model(object):
         t0 = time.time()
         # bar = progressbar.ProgressBar(widgets=[' [', progressbar.Timer(), '] ',progressbar.Bar(),' (', progressbar.ETA(), ') '])
         for i in range(epochs):
-            print(i)
             # Set statespace for testing:
             if i == epochs - 1:
                 trades = np.array([np.zeros(len(self.symbols))]*len(self.data_test))
@@ -294,7 +293,7 @@ class Model(object):
                 # print(term)
                 # evaluate r (bestowal)
 
-                bestowal = self.bestow(state_prime, step, action, close, trades, term, epoch = i)
+                bestowal = self.bestow(state_prime, step, action, close, trades, term)
 
                 # Set up memory for reinforcement learning
                 if len(st_mem) < buffer:
@@ -343,7 +342,7 @@ class Model(object):
 
             epoch_bestowal = self.eval_Q(self.X_test, ep = 5)
             learning_progress.append(epoch_bestowal)
-
+            print(bar)
             # So we know what's going on.
             print('\n\nEPOCH: {} \nREWARD: {}\nEXPLORATION COEFFICENT: {}\n\n'.format(i, epoch_bestowal, explore))
             if explore > 0.1:
