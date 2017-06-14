@@ -90,27 +90,29 @@ class Backtest(object):
 
         # first thing to do is to clean up the signal, removing nans and duplicate entries or exits
         self.signal = signal.ffill().fillna(0)
+        self.total_shares = self.signal.cumsum()
 
         # now find dates with a trade
-        tradeIdx = self.signal.diff().fillna(0) !=0 # days with trades are set to True
+        tradeIdx = self.signal !=0 # days with trades are set to True
         if signalType == 'shares':
-            self.trades = self.signal[tradeIdx] # selected rows where tradeDir changes value. trades are in Shares
+            self.trades = self.signal # selected rows where tradeDir changes value. trades are in Shares
         elif signalType =='capital':
-            self.trades = (self.signal[tradeIdx]/price[tradeIdx])
+            self.trades = (self.signal/price)
             if roundShares:
                 self.trades = self.trades.round()
 
         # now create internal data structure
         self.data = pd.DataFrame(index=price.index , columns = ['price','shares','value','cash','pnl'])
         self.data['price'] = price
-
-        self.data['shares'] = self.trades.reindex(self.data.index).ffill().fillna(0)
-        self.data['value'] = self.data['shares'] * self.data['price']
+        self.data['trades'] = self.total_shares
+        self.data['shares'] = self.trades
+        self.data['value'] = self.data['trades'] * self.data['price']
 
         delta = self.data['shares'].diff() # shares bought sold
 
-        self.data['cash'] = (-delta*self.data['price']).fillna(0).cumsum()+initialCash
+        self.data['cash'] = (-self.data['price']*self.data['shares']).fillna(0).cumsum()+initialCash
         self.data['pnl'] = self.data['cash']+self.data['value']-initialCash
+        # import ipdb; ipdb.set_trace()
 
 
     @property
@@ -118,6 +120,7 @@ class Backtest(object):
         ''' return annualized sharpe ratio of the pnl '''
         pnl = (self.data['pnl'].diff()).shift(-1)[self.data['shares']!=0] # use only days with position.
         return sharpe(pnl)  # need the diff here as sharpe works on daily returns.
+
 
     @property
     def pnl(self):

@@ -6,18 +6,20 @@ from datetime import date, datetime
 from time import mktime
 import time
 import random
-
+import os
+import sys
+from twilio.rest import Client
 # Plotting and Viz libraries
 import matplotlib.pyplot as plt
 
 # Machine Learning Libs
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from sklearn.externals import joblib
 from keras.models import Sequential
 from keras.layers.core import Dense, Activation, Dropout
 from keras.layers.recurrent import LSTM
-from keras.optimizers import RMSprop, Adam, Nadam
-
+from keras.optimizers import Adam, Nadam
+from string import punctuation
 #Trading libraries
 import talib.abstract as ta
 from poloniex import Poloniex
@@ -25,6 +27,15 @@ from poloniex import Poloniex
 import backtest as bt
 import progressbar
 import ipdb
+
+# Globals
+account = os.environ['TWILIO_API_KEY']
+twi_auth = os.environ['TWILIO_AUTH_TOKEN']
+to_num = os.environ['JOHN_NUM']
+from_num = os.environ['FROM_NUM']
+client = Client(account, twi_auth)
+chump = []
+
 '''
 Name:           Model
 
@@ -62,13 +73,13 @@ class Model(object):
     def __init__(self, symbols = ['BTC','ETH'], num_features = 7, batch_length = 1, drop = [0.33,0.33, 0.33]):
         num_curr = len(symbols)
         model = Sequential()
-        model.add(LSTM(64,
+        model.add(LSTM(128,
                        input_shape=(num_curr, num_features),
                        return_sequences=True,
                        stateful=False))
         model.add(Dropout(drop[0]))
 
-        model.add(LSTM(64,
+        model.add(LSTM(128,
                        return_sequences=True,
                        stateful=False))
         model.add(Dropout(drop[1]))
@@ -79,10 +90,11 @@ class Model(object):
         model.add(Dense(4, kernel_initializer='lecun_uniform', activation = 'linear'))
         # model.add(Activation('linear')) #linear output so we can have range of real-valued outputs
 
-        model.compile(loss='mse', optimizer='nadam')
+        model.compile(loss='mse', optimizer='rmsprop', sample_weight_mode = 'temporal')
         self.rnn = model
         self.symbols = symbols
         self.batch_length = batch_length
+        self.init_cash = 1000
 
     def load_data(self,  start = None, end = None, period = 14400, is_pkld = True):
         '''
@@ -110,7 +122,9 @@ class Model(object):
             # Form MultiIndexed DataFrame
             prices = pd.DataFrame(data = np.hstack([i.values for i in sym_price]), index = sym_price[0].index,columns = pd.MultiIndex.from_tuples([i for i in zip(a,b)]))
             joblib.dump(prices, '../data/prices_{}coins.pkl'.format(len(self.symbols)))
-        self.X_train, self.X_test = self.split_data(prices, min(250, len(prices)), 0.2)
+        self.data_size = min(100, len(prices))
+        self.X_train, self.X_test = self.split_data(prices, self.data_size, 0.2)
+        self.X_t = self.X_train.append(self.X_test)
         # _,_ = self.init_state(self.X_train)
         # _,_ = self.init_state(self.X_test, )
 
@@ -120,7 +134,8 @@ class Model(object):
         '''
         INSERT DOCSTRING HERE
         '''
-        return data.iloc[-quantity:-round(quantity*test_size),], data.iloc[-quantity:,]
+        # self.X_test_little = data.iloc(-((len(data)-quantity)-round(quantity*test_size)):)
+        return data.iloc[:int(quantity*(1-test_size)),], data.iloc[int(quantity*(1-test_size)):quantity]
 
     def init_state(self, X, test):
         '''
@@ -130,7 +145,13 @@ class Model(object):
         close = []
         #print(self.symbols)
         for i, s in enumerate(self.symbols):
-            close.append(X[s]['close'].values)
+            if not test:
+                scaler = StandardScaler()
+                close.append(scaler.fit_transform(X[s]['close'].values.reshape(-1,1)).flatten())
+                joblib.dump(scaler, '../data/{}scaler.pkl'.format(s))
+            elif test:
+                scaler = joblib.load('../data/{}scaler.pkl'.format(s))
+                close.append(scaler.transform(X[s]['close'].values.reshape(-1,1)).flatten())
             diff = np.diff(close[i])
             diff = np.insert(diff, 0,0)
             sma15 = ta.SMA(X[s], timeperiod = 15)
@@ -139,22 +160,11 @@ class Model(object):
             atr = ta.ATR(X[s], timeperiod = 14)
 
             data.append(np.nan_to_num(np.vstack((close[i], diff, sma15, close[i]-sma15, sma15-sma60, rsi, atr))))
-            # if not test:
-            #     scaler = StandardScaler()
-            #     scaler.fit(data[i])
-            #     scaled_data = scaler.transform(data[i])
-            #
-            #     data[i] = np.expand_dims(scaled_data, axis = 1)
-            #     joblib.dump(scaler, '../data/{}scaler.pkl'.format(s))
-            # elif test:
-            #     scaler = joblib.load('../data/{}scaler.pkl'.format(s))
-            #
-            #     scaled_data = scaler.transform(data[i])
             data[i] = np.expand_dims(data[i], axis = 1)
 
         data = np.hstack(data).T
         close = np.vstack(close)
-        state = data[0:self.batch_length,:,:]
+        state = data[0:1,:,:]
         if test:
             self.data_test = data
         else:
@@ -162,84 +172,110 @@ class Model(object):
         return state, close
 
 
-    def act(self, state, action, trades, step):
+    def act(self,indata, state, action, trades, step):
         '''
         INSERT DOCSTRING HERE
         '''
         # print(action)
-        mask = np.array([0,10,-10,0])
-        if step +1 == self.data.shape[0]:
-            state = self.data[step, :, :]
+        mask = np.array([0,100,-100,0])
+        # print(step, indata.shape[0])
+        if step +1 == indata.shape[0]:
+            state = indata[step, :, :]
             state = np.expand_dims(state, axis = 0)
             term = True
             trades[step] = [0]*len(self.symbols)
             return state, step, trades, term
         else:
-            # if step+1 == len(trades):
-                # ipdb.set_trace()
-            state = self.data[step+1, :, :]
+            state = indata[step+1, :, :]
             # Take trade action {0:Hold, 1:Buy, 2:Sell}
             # print(trades)
             # for i in range(len(self.symbols)):
-
-            trades[step+1] = mask[action]
             term = False
+            # import ipdb; ipdb.set_trace()
+            trades[step+1] = mask[action]
             step += 1
             # print(step)
             return state[np.newaxis, :], step, trades, term
 
-    def bestow(self, new_state, step, action, prices, trades, term, epoch = None , plot = False):
+    def bestow(self, new_state, step, action, prices, trades, term, epoch = None , plot = False, evaluate = False):
         '''
         INSERT DOCSTRING HERE
         '''
         bestowal = [0]*len(self.symbols)
-        if term == False:
+        if evaluate == False:
             for i in range(len(self.symbols)):
-
-                b_test = bt.Backtest(pd.Series(data=prices[i,step-2:step], index =np.arange(step-2,step)).astype(float),pd.Series(data = trades[step-2:step,i]).astype(float), signalType='shares')
+                # ipdb.set_trace()
+                b_test = bt.Backtest(pd.Series(data=prices[i,step-2:step], index =np.arange(step-2,step)).astype(float),pd.Series(data = trades[step-2:step,i], index = np.arange(step-2,step)).astype(float),roundShares = False, signalType='capital')
                 bestowal[i] = ((b_test.data['price'].iloc[-1] -b_test.data['price'].iloc[-2]) * b_test.data['shares'].iloc[-1])
-        else:
+
+        elif evaluate == True and term == True:
             for i in range(len(self.symbols)):
-                # if term:
-                    # ipdb.set_trace()
-                b_test = bt.Backtest(pd.Series(data=prices[i,:], index = np.arange(len(trades))), pd.Series(data = trades[:,i]) , signalType='shares')
+                # ipdb.set_trace()
+                b_test = bt.Backtest(pd.Series(data=prices[i,:], index = np.arange(len(trades))), pd.Series(data = trades[:,i]) ,roundShares = False, initialCash = self.init_cash, signalType='capital')
+                # bestowal[i] = ((b_test.data['price'].iloc[-1] -b_test.data['price'].iloc[-2]) * b_test.data['shares'].iloc[-2])
+
                 bestowal[i] = b_test.pnl.iloc[-1]
                 if plot == True:
-                    plt.figure(figsize = (6,8))
+                    plt.figure(figsize = (12,8))
                     b_test.plotTrades()
-                    plt.axvline(x=400, color='black', linestyle='--')
+                    plt.axvline(x=round(self.data_size*0.8), color='black', linestyle='--')
                     plt.text(250, 400, 'training data')
                     plt.text(450, 400, 'test data')
-                    plt.suptitle(str(epoch))
-                    plt.savefig('plt/'+str(epoch)+'.png', bbox_inches='tight', pad_inches=1, dpi=72)
+                    plt.suptitle(self.symbols[i] + str(epoch))
+                    plt.savefig('../images/'+self.symbols[i]+str(epoch)+'.png', bbox_inches='tight', pad_inches=1, dpi = 72)
                     plt.close('all')
                 # print(trades)
-        return sum(bestowal)
+                self.init_cash = 1000
+            joblib.dump(b_test.data, '../data/epoch_{}_backtest.pkl'.format(epoch))
+        return bestowal
 
     def eval_Q(self, eval_data, ep):
         '''
         INSERT DOCSTRING HERE
         '''
+        bestowal = []
+        state, closeT = self.init_state(self.X_t, test = True)
         trades = np.array([np.zeros(len(self.symbols))]*len(self.data_test))
-        # trades = pd.Series(data = [np.zeros(len(self.symbols))]*len(self.data_test), index = np.arange(len(self.data_test)))
-        state, prices = self.init_state(eval_data, test = True)
-        state_val = state
-        step = 1
+        step = 14
+        values = []
+        actions = []
         term = False
-        go = True
-        j = 0
-        while go == True:
-            #print(state_val.shape)
-            q_values = self.rnn.predict(state_val.reshape(1,2,7))
-            action = np.argmax(q_values, axis = 2)
-            state_prime, step, trades, term = self.act(state_val, action, trades, step)
+        # import ipdb; ipdb.set_trace()
+        while not term:
+            qs = self.rnn.predict(state)
 
-            bestowal = self.bestow(state_prime,step,action,prices, trades, term, epoch = ep)
+            action = np.argmax(qs, axis = 2).flatten()
+            # values.append(qs)
+            # actions.append(action)
+            if step +1 == len(self.data_test):
+                term = True
+            state_prime, step, trades, term = self.act(self.data_test, state, action, trades, step)
+            bestowal = self.bestow(state_prime, step, action, closeT, trades, term = True,epoch = ep, plot = False, evaluate = True)
             state = state_prime
-            j += 1
-            # print(bestowal)
             if term:
-                return bestowal
+                return np.array(bestowal)
+
+
+        # trades = np.array([np.zeros(len(self.symbols))]*len(self.data_test))
+        # # trades = pd.Series(data = [np.zeros(len(self.symbols))]*len(self.data_test), index = np.arange(len(self.data_test)))
+        # state, prices = self.init_state(eval_data, test = True)
+        # state_val = state
+        # step = 3
+        # term = False
+        # go = True
+        # j = 0
+        # while go == True:
+        #     #print(state_val.shape)
+        #     q_values = self.rnn.predict(state_val.reshape(1,2,7))
+        #     action = np.argmax(q_values, axis = 2)
+        #     state_prime, step, trades, term = self.act(self.data_test, state_val, action, trades, step)
+        #
+        #     bestowal = self.bestow(state_prime,step,action,prices, trades, term,evaluate = True, epoch = ep)
+        #     state = state_prime
+        #     j += 1
+        #     # print(bestowal)
+        #     if term:
+        #         return np.array(bestowal)
 
     def fit(self, epochs = 100):
         '''
@@ -247,27 +283,31 @@ class Model(object):
         '''
 
         #reinforcement learning parameters
-        gamma = 0.95
+        gamma = 0.99
         explore = 1
-        mem_chunk = 100
+        mem_chunk = 21
+
 
         # "memory"
-        buffer = 200
+        buffer = 21
         h = 0
         st_mem = []
-        _,p = self.init_state(self.X_train, test = False)
-        _,pT = self.init_state(self.X_test, test = True)
+        state,p = self.init_state(self.X_train, test = False)
+        stateT,pT = self.init_state(self.X_t, test = True)
 
         learning_progress = [] #Stores state, Action, reward (bestowal :) ) and next state
         # reinforcement learning loop
         t0 = time.time()
+
         # bar = progressbar.ProgressBar(widgets=[' [', progressbar.Timer(), '] ',progressbar.Bar(),' (', progressbar.ETA(), ') '])
+        bar =  progressbar.ProgressBar(widgets=[' [', progressbar.Timer(), '] ',progressbar.Bar(),' (', progressbar.ETA(), ') '], max_value = epochs * self.data_size).start()
         for i in range(epochs):
             # Set statespace for testing:
             if i == epochs - 1:
                 trades = np.array([np.zeros(len(self.symbols))]*len(self.data_test))
                 t_data = self.data_test
                 close = pT
+                state = stateT
             elif i == 0:
                 trades = np.array([np.zeros(len(self.symbols))]*len(self.data))
                 # trades = pd.Series(data = [[0]*(len(self.symbols))]*len(self.data), index = np.arange(len(self.data)))
@@ -276,25 +316,37 @@ class Model(object):
             go = True
             term = False
 
-            step = 3 # With a period of 4 hours (14400 sec), 3 periods = 12 hours
-            state = t_data[i:i+1,:,:]
+            step = 14
+            # state = t_data[i:i+1,:,:]
             # close = t_data
-            # bar =  progressbar.ProgressBar(widgets=[' [', progressbar.Timer(), '] ',progressbar.Bar(),' (', progressbar.ETA(), ') '], max_value = 100).start()
-            bar = 0
+            # if i == 0:
+            #     scaler = StandardScaler()
+            #     qvs = self.rnn.predict(t_data)
+            #     scaler.fit(qvs[:,0,:])
+            print('RL Epoch {}'.format(i))
+            rewards = []
+            # import ipdb; ipdb.set_trace()
             while go:
-                q_values = self.rnn.predict(state, batch_size = 10)
+                q_values = self.rnn.predict(state)
+                bar+=1
                 # impliment exploration parameter!
                 if (np.random.rand() < explore):
-                    action = np.random.randint(4, size = 2)
+                    action = np.random.randint(4, size = len(self.symbols))
                 else:
+                    # if abs(q_values[:,:,1] - q_values[:,:,2]) < abs(q_values[:,:,2]*0.1):
+                    #     action = np.zeros(len(self.symbols)).astype(int)
+                    # else:
+                    #     action = [np.zeros(len(self.symbols)).astype(int),np.argmax(q_values, axis = 2)[0,:]][np.random.choice(2)]
                     action = np.argmax(q_values, axis = 2)[0]
                 # take action and evaluate new state
-                state_prime, step, trades, term = self.act(state, action, trades, step)
+                print(action, np.argmax(q_values, axis = 2))
+                state_prime, step, trades, term = self.act(t_data, state, action, trades, step)
                 # print(term)
                 # evaluate r (bestowal)
 
                 bestowal = self.bestow(state_prime, step, action, close, trades, term)
-
+                if i == epochs-1:
+                    rewards.append(bestowal)
                 # Set up memory for reinforcement learning
                 if len(st_mem) < buffer:
                     st_mem.append([state, action, bestowal, state_prime])
@@ -309,7 +361,7 @@ class Model(object):
                     batch = random.sample(st_mem, k = mem_chunk)
                     xTrain = []
                     yTrain = []
-                    for z, mem in enumerate(st_mem):
+                    for z, mem in enumerate(batch):
                         mem_state, mem_action, mem_bestowal, mem_state_prime = mem
                         mem_q = self.rnn.predict(mem_state)
                         # if term:
@@ -324,8 +376,9 @@ class Model(object):
                         try:
                             for k in range(len(self.symbols)):
                                 # ipdb.set_trace()
-                                bar+=1
+
                                 y[0][k][action[k]] = update[0][k]
+
                         except IndexError:
                             term = True
 
@@ -334,45 +387,111 @@ class Model(object):
 
                     xTrain = np.squeeze(np.array(xTrain), axis = (1))
                     yTrain = np.squeeze(np.array(yTrain), axis = (1))
-                    self.rnn.fit(xTrain,yTrain, batch_size = mem_chunk, epochs = 10, verbose = 0)
-                    state = state_prime
-
+                    t1 = time.time()
+                    self.rnn.fit(xTrain,yTrain, batch_size = mem_chunk, epochs = 50, verbose = 0)
+                state = state_prime
                 if term:
                     go = False
 
-            epoch_bestowal = self.eval_Q(self.X_test, ep = 5)
+            epoch_bestowal = self.eval_Q(self.X_t, ep = i+1)
+            # print(epoch_bestowal[-1])
             learning_progress.append(epoch_bestowal)
-            print(bar)
             # So we know what's going on.
-            print('\n\nEPOCH: {} \nREWARD: {}\nEXPLORATION COEFFICENT: {}\n\n'.format(i, epoch_bestowal, explore))
+            # import ipdb; ipdb.set_trace()
+            print('\n\nEPOCH: {} \nREWARD: {}\nEXPLORATION COEFFICENT: {}\n\n'.format(i+1, epoch_bestowal[-1], explore))
+            # message = client.messages.create(to=to_num, from_=from_num, body = '\n\nEPOCH {} FINISHED\nREWARD: {}\nEXPLORATION COEFFICENT: {}\n\n'.format(i+1, epoch_bestowal[-1][-1], explore))
             if explore > 0.1:
-                explore -= (1.0/epochs)**0.5
+                explore -= (1.0/epochs)
+            # if i % 5 == 4:
+            self.test(ep = i)
+            self.rnn.save('../data/model{}.h5'.format(i), overwrite = True)
+            # serialize model to JSON
+            # model_json = self.rnn.to_json()
+            # with open("../data/model{}.json".format(i), "w") as json_file:
+            #     json_file.write(model_json)
+            #     # serialize weights to HDF5
+            #     self.rnn.save_weights("../data/model{}.h5".format(i))
+            #     print("Saved model to disk")
         eval_time = time.time() -t0
 
         print('Reinforcement Learning Completed in {} seconds'.format(round(eval_time,2)))
         print(' -- {} seconds per Epoch\n'.format(round(eval_time/epochs,2)))
-        mod_to_pickle = self.rnn
-        # joblib.dump(mod_to_pickle, '../data/RNN_model.pkl')
-        for i, s in enumerate(self.symbols):
-            b_test = bt.Backtest(pd.Series(data=close[i,:], index = np.arange(len(trades))), pd.Series(data = [j[i] for j in trades]) , signalType='capital')
-            b_test.data['delta'] = b_test.data['shares'].diff().fillna(0)
-            plt.figure(figsize = (12,8))
-            plt.subplot(3,1,1)
-            b_test.plotTrades()
-            plt.subplot(3,1,2)
-            b_test.pnl.plot(style = 'x-')
-            plt.subplot(3,1,3)
 
-            plt.plot(learning_progress)
 
-            plt.savefig('../images/{}_summary.png'.format(s),bbox_inches = 'tight',pad_inches = 0.5, dpi = 72)
+
+
+    def test(self, ep):
+        #load model here
+        bestowal = []
+        state, closeT = self.init_state(self.X_t, test = True)
+        trades = np.array([np.zeros(len(self.symbols))]*len(self.data_test))
+        step = 14
+        state = self.data_test[step:step+1, :,:]
+        values = []
+        actions = []
+        term = False
+        while not term:
+            qs = self.rnn.predict(state)
+            # if abs(qs[:,:,1] - qs[:,:,2]) < abs(qs[:,:,2]*0.1):
+            #     action = np.zeros(len(self.symbols)).astype(int)
+            # else:
+            #     # import ipdb; ipdb.set_trace()
+            #     action = [np.zeros(len(self.symbols)).astype(int),np.argmax(qs, axis = 2)[0,:]][np.random.choice(2)]
+            action = np.argmax(qs, axis = 2)[0]
+            values.append(qs)
+            actions.append(action)
+            print(action)
+            if step +1 == len(self.data_test):
+                term = True
+            state_prime, step, trades, term = self.act(self.data_test, state, action, trades, step)
+            bestowal = self.bestow(state_prime, step, action, closeT, trades, term = True, evaluate = True)
+            # print(bestowal)
+            state = state_prime
+            if term:
+                # ipdb.set_trace()
+                # print(qs)
+
+                for i, s in enumerate(self.symbols):
+                    b_test = bt.Backtest(pd.Series(data=closeT[i,:], index = np.arange(len(trades))), pd.Series(data = [j[i] for j in trades]) , initialCash = self.init_cash, roundShares = False, signalType='capital')
+                    b_test.data['delta'] = b_test.data['shares'].diff().fillna(0)
+                    # ipdb.set_trace()
+                    plt.figure(figsize = (12,8))
+                    plt.subplot(3,1,1)
+                    b_test.plotTrades()
+                    plt.subplot(3,1,2)
+                    plt.title('Gains')
+                    b_test.pnl.plot(style = 'x-')
+                    plt.subplot(3,1,3)
+                    plt.title('Overall Gains per RL Iteration')
+                    plt.plot(np.array(bestowal).flatten()[i], 'r', label = s)
+                    plt.plot(np.sum(np.array(bestowal), axis = 0), 'k', label = 'Total')
+                    plt.legend()
+
+                    plt.savefig('../images/{}_{}TEST_summary.png'.format(s, ep),bbox_inches = 'tight',pad_inches = 0.5, dpi = 72)
+                    # plt.savefig('../images/{}_{}_summary.png'.format(s, ep),bbox_inches = 'tight',pad_inches = 0.5, dpi = 72)
+                    plt.close('all')
+
+                    self.init_cash = 1000
+                return bestowal, values, actions, closeT, b_test
 
 
 if __name__ == '__main__':
-    coins = ['BTC','ETH']
-    start = mktime(datetime(2015, 8,8).timetuple())
-    end = time.time()
+    # GOOD 28 mem chunk, 56 buffer, 100 epochs, 20 RNN epochs
+    # Bad: 14 mem chunk, 100 buffer, 200 epochs, 5 RNN epochs
+    coins = ['BTC']
+    start = mktime(datetime(2016,6,6).timetuple())
+    end = mktime(datetime(2016, 12,15).timetuple())
     model = Model(num_features = 7,symbols = coins)
-    model.load_data(start = start, end = end, period = 14400, is_pkld = True)
+    model.load_data(start = start, end = end, period = 86400, is_pkld = True)
     state, close = model.init_state(model.X_train, test = False)
-    model.fit(epochs = 10)
+    client = Client(account, twi_auth)
+    try:
+        model.fit(epochs = 200)
+        message = client.messages.create(to=to_num, from_ = from_num, body = "COMPUTE FINISHED -- SUCCESS")
+        print(message.sid)
+    except:
+
+        rewards, Qs, actions, closeT ,b_test= model.test(ep = 100)
+        message = client.messages.create(to=to_num, from_ = from_num, body = "COMPUTE FAILED \n Unexpected Error: {}".format(str(sys.exc_info()[0]).split()[1].strip(punctuation)))
+        print(message.sid)
+        raise
