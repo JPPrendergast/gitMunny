@@ -476,8 +476,9 @@ class Model(object):
 
 
 if __name__ == '__main__':
-    # GOOD 28 mem chunk, 56 buffer, 100 epochs, 20 RNN epochs
-    # Bad: 14 mem chunk, 100 buffer, 200 epochs, 5 RNN epochs
+    # GOOD 28 mem chunk, 56 buffer, 100 epochs, 20 RNN epochs converged aroun 50
+    # Bad: 14 mem chunk, 100 buffer, 200 epochs, 5 RNN epochs total shite
+    # Current 21 mem chunk 21 buffer, 200 epochs, 50 RNN epochs
     coins = ['BTC']
     start = mktime(datetime(2016,6,6).timetuple())
     end = mktime(datetime(2016, 12,15).timetuple())
