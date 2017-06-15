@@ -68,7 +68,7 @@ class Backtest(object):
     Backtest class, simple vectorized one. Works with pandas objects.
     """
 
-    def __init__(self,price, signal, signalType='capital',initialCash = 0, roundShares=True):
+    def __init__(self,price, signal, signalType='capital',initialCash = 0, roundShares=True, fee = 0.0015):
         """
         Arguments:
 
@@ -90,27 +90,29 @@ class Backtest(object):
 
         # first thing to do is to clean up the signal, removing nans and duplicate entries or exits
         self.signal = signal.ffill().fillna(0)
-        self.total_shares = self.signal.cumsum()
 
         # now find dates with a trade
         tradeIdx = self.signal !=0 # days with trades are set to True
         if signalType == 'shares':
+            self.total_shares = self.signal.cumsum()
             self.trades = self.signal # selected rows where tradeDir changes value. trades are in Shares
         elif signalType =='capital':
             self.trades = (self.signal/price)
+            self.total_shares = (self.signal/price).cumsum()
             if roundShares:
                 self.trades = self.trades.round()
 
         # now create internal data structure
         self.data = pd.DataFrame(index=price.index , columns = ['price','shares','value','cash','pnl'])
         self.data['price'] = price
-        self.data['trades'] = self.total_shares
-        self.data['shares'] = self.trades
-        self.data['value'] = self.data['trades'] * self.data['price']
+        self.data['shares'] = self.total_shares
+        self.data['trades'] = self.trades
+        self.data['value'] = self.data['shares'] * self.data['price']
 
-        delta = self.data['shares'].diff() # shares bought sold
-
-        self.data['cash'] = (-self.data['price']*self.data['shares']).fillna(0).cumsum()+initialCash
+        delta = self.data['trades'].diff() # shares bought sold
+        # self.data[['shares', 'trades']].loc[self.data['shares'] < 0] = 0
+        # self.data[['cash','trades']].loc[self.data['cash']< 0] = 0
+        self.data['cash'] = (-self.data['price']*self.data['trades']).fillna(0).cumsum()+initialCash
         self.data['pnl'] = self.data['cash']+self.data['value']-initialCash
         # import ipdb; ipdb.set_trace()
 
@@ -154,13 +156,13 @@ class Backtest(object):
         #colored line for long positions
         idx = (self.data['shares'] > 0) | (self.data['shares'] > 0).shift(1)
         if idx.any():
-            p[idx].plot(style='go')
+            p[idx].plot(style='go', alpha = 0.7)
             l.append('long')
 
         #colored line for short positions
         idx = (self.data['shares'] < 0) | (self.data['shares'] < 0).shift(1)
         if idx.any():
-            p[idx].plot(style='ro')
+            p[idx].plot(style='ro', alpha = 0.7)
             l.append('short')
 
         plt.xlim([p.index[0],p.index[-1]]) # show full axis
