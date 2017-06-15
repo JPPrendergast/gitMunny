@@ -89,7 +89,7 @@ class Backtest(object):
         self.settings = {'signalType':signalType}
 
         # first thing to do is to clean up the signal, removing nans and duplicate entries or exits
-        self.signal = signal.ffill().fillna(0)
+        self.signal = signal.diff().ffill().fillna(0)
 
         # now find dates with a trade
         tradeIdx = self.signal !=0 # days with trades are set to True
@@ -109,10 +109,10 @@ class Backtest(object):
         self.data['trades'] = self.trades
         self.data['value'] = self.data['shares'] * self.data['price']
 
-        delta = self.data['trades'].diff() # shares bought sold
         # self.data[['shares', 'trades']].loc[self.data['shares'] < 0] = 0
-        # self.data[['cash','trades']].loc[self.data['cash']< 0] = 0
-        self.data['cash'] = (-self.data['price']*self.data['trades']).fillna(0).cumsum()+initialCash
+        # self.data['cash'].loc[self.data['cash']< 0] = 0
+        delta = self.data['shares'].diff().fillna(0) # shares bought sold
+        self.data['cash'] = (-self.data['price']*delta).fillna(0).cumsum() + initialCash
         self.data['pnl'] = self.data['cash']+self.data['value']-initialCash
         # import ipdb; ipdb.set_trace()
 
@@ -154,13 +154,13 @@ class Backtest(object):
 
         # --- plot trades
         #colored line for long positions
-        idx = (self.data['shares'] > 0) | (self.data['shares'] > 0).shift(1)
+        idx = (self.data['trades'] > 0) | (self.data['trades'] > 0).shift(1)
         if idx.any():
             p[idx].plot(style='go', alpha = 0.7)
             l.append('long')
 
         #colored line for short positions
-        idx = (self.data['shares'] < 0) | (self.data['shares'] < 0).shift(1)
+        idx = (self.data['trades'] < 0) | (self.data['trades'] < 0).shift(1)
         if idx.any():
             p[idx].plot(style='ro', alpha = 0.7)
             l.append('short')
