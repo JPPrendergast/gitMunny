@@ -179,5 +179,3 @@ class Model(object):
         buffer = 200
         replay = []
         learning_progress = []
-
-        
