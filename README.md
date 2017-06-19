@@ -1,7 +1,7 @@
 # gitMunny
 #### A foray into reinforcement learning aiming to profitably trade with Deep-Q Networks
-![Poloniex Chart -- BitCoin](./images/bitcoinExchange.png)
 <div style = 'text-align: center'>
+<img src=./images/bitcoinExchange.png>
 <img src=./images/Bitcoin_logo.png><img src=./images/ethereumLogo.png>
 </div>
 
@@ -40,12 +40,14 @@ There are several reasons this could be happening:
 
 These learning progress plots are rather noisy, as is to be expected. I would expect that if I had had the time to let it run for a couple of days, the noise would decrease significantly. I also believe that my algorithm, with a few more tweaks, and running for more iterations (100,000 +), it could learn to be a very profitable Quant!
 
-The next step in this process is to organize the algorithm into classes and, eventually, engineer a form of NLP as another predictive feature. 
+The next step in this process is to organize the algorithm into classes and, eventually, engineer a form of NLP as another predictive feature.
 
 ##Why Reinforcement Learning?
 
 
 ### References
-[The Self Learning Quant](https://hackernoon.com/the-self-learning-quant-d3329fcc9915)
-[Eder Santana -- github](https://github.com/EderSantana/X)
-[PyTrader](https://github.com/owocki/pytrader/)
+-[The Self Learning Quant](https://hackernoon.com/the-self-learning-quant-d3329fcc9915)
+
+-[Eder Santana -- github](https://github.com/EderSantana/X)
+
+-[PyTrader](https://github.com/owocki/pytrader/)
