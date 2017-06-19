@@ -68,7 +68,7 @@ class Backtest(object):
     Backtest class, simple vectorized one. Works with pandas objects.
     """
 
-    def __init__(self,price, signal, signalType='capital',initialCash = 0, roundShares=True, fee = 0.0015):
+    def __init__(self,price, signal, signalType='capital',initialCash = 0,initialShares = 2, roundShares=True, makerFee = 0.0015, takerFee = 0.0025):
         """
         Arguments:
 
@@ -81,7 +81,10 @@ class Backtest(object):
         """
 
         #TODO: add auto rebalancing
-
+        if len(signal) > 10:
+            cash = initialCash-(signal*price).cumsum()
+            signal[cash<0] = (signal[cash<0] - abs(signal[cash<0]))/2
+            # import ipdb; ipdb.set_trace()
         # check for correct input
         assert signalType in ['capital','shares'], "Wrong signal type provided, must be 'capital' or 'shares'"
 
@@ -94,8 +97,11 @@ class Backtest(object):
         # now find dates with a trade
         tradeIdx = self.signal !=0 # days with trades are set to True
         if signalType == 'shares':
-            self.total_shares = self.signal.cumsum()
-            self.trades = self.signal # selected rows where tradeDir changes value. trades are in Shares
+            self.total_shares = initialShares+self.signal.cumsum()
+            self.trades = self.signal.copy()
+            if len(signal)> 10:
+                self.trades[self.total_shares.shift(-1) < 0] = 0
+                self.total_shares = initialShares + self.trades.cumsum()
         elif signalType =='capital':
             self.trades = (self.signal/price)
             self.total_shares = (self.signal/price).cumsum()
@@ -103,18 +109,25 @@ class Backtest(object):
                 self.trades = self.trades.round()
 
         # now create internal data structure
-        self.data = pd.DataFrame(index=price.index , columns = ['price','shares','value','cash','pnl'])
+
+        self.data = pd.DataFrame(index=price.index , columns = ['price','trades','shares','value','cash','total_fees','pnl', 'netProfit'])
         self.data['price'] = price
         self.data['shares'] = self.total_shares
         self.data['trades'] = self.trades
-        self.data['value'] = self.data['shares'] * self.data['price']
-
-        delta = self.data['trades'].diff() # shares bought sold
-        # self.data[['shares', 'trades']].loc[self.data['shares'] < 0] = 0
-        # self.data[['cash','trades']].loc[self.data['cash']< 0] = 0
-        self.data['cash'] = (-self.data['price']*self.data['trades']).fillna(0).cumsum()+initialCash
-        self.data['pnl'] = self.data['cash']+self.data['value']-initialCash
-        # import ipdb; ipdb.set_trace()
+        if len(signal) > 10:
+            self.fees = self.trades.copy() * price.copy()
+            self.fees[self.trades < 0] *= takerFee
+            self.fees[self.trades > 0] *= makerFee
+            self.fees = abs(self.fees)
+            self.data['value'] = self.data['shares'] * self.data['price']
+            self.data['total_fees'] = self.fees.cumsum()
+            delta = self.data['trades'].diff() # shares bought sold
+            # self.data[['shares', 'trades']].loc[self.data['shares'] < 0] = 0
+            # self.data[['cash','trades']].loc[self.data['cash']< 0] = 0
+            self.data['cash'] = (-self.data['price']*self.data['trades'] - self.fees).fillna(0).cumsum()+initialCash
+            self.data['netProfit'] = self.data.cash + self.data.value - (self.data.cash[0] + self.data.value[0])
+            self.data['pnl'] = self.data['cash']+self.data['value']-initialCash - (self.data.price * initialShares)
+            # import ipdb; ipdb.set_trace()
 
 
     @property
@@ -139,7 +152,7 @@ class Backtest(object):
         l = ['price']
 
         p = self.data['price']
-        p.plot(style='x-')
+        p.plot(style='-')
 
         # ---plot markers
         # this works, but I rather prefer colored markers for each day of position rather than entry-exit signals
@@ -154,13 +167,13 @@ class Backtest(object):
 
         # --- plot trades
         #colored line for long positions
-        idx = (self.data['shares'] > 0) | (self.data['shares'] > 0).shift(1)
+        idx = (self.data['trades'] > 0) | (self.data['trades'].shift(1) > 0)
         if idx.any():
             p[idx].plot(style='go', alpha = 0.7)
             l.append('long')
 
         #colored line for short positions
-        idx = (self.data['shares'] < 0) | (self.data['shares'] < 0).shift(1)
+        idx = (self.data['trades'] < 0) | (self.data['trades'].shift(1) < 0)
         if idx.any():
             p[idx].plot(style='ro', alpha = 0.7)
             l.append('short')
@@ -168,7 +181,7 @@ class Backtest(object):
         plt.xlim([p.index[0],p.index[-1]]) # show full axis
 
         plt.legend(l,loc='best')
-        plt.title('trades')
+        plt.title('Trades')
 
 
 class ProgressBar:
