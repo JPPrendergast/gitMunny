@@ -19,12 +19,30 @@ The ultimate goals of the gitMunny project are quite far reaching; however, the 
 
 | | 1,000 steps | 5,000 steps | 10,000 steps|
 |---| --- | --- | ---|
-|Trading Summary| ![RL1](./images/BTC_1000sgd_summary.png) | ![RL2](./images/BTC_5000sgd_summary.png) | ![RL3](images/BTC_10000sgd_summary.png)|
+|Trading Summary| ![RL1](./src/BTC_1000sgd_summary.png) | ![RL2](./src/BTC_5000sgd_summary.png) | ![RL3](src/BTC_10000sgd_summary.png)|
 
+####Discussion:
+As we can see in the plots above, even after 10000 iterations, the trader, while collecting a tidy profit, is doing so with very few actual trades, even though it would ideally be able to increase that profit margin with some higher frequency margin trading.
+
+There are several reasons this could be happening:
+- Improper use of Scaler.
+-- Using a standard scaler, as the MinMaxScaler lead to vanishing gradients.
+-- I likely scaled the data in the wrong place. I am currently working on that in the `pretty` branch.
+- Consistent upward trend in the data.
+-- RNNs can easily overfit, and with a nearly constant upward trending dataset, it decided to buy everything it could early on.
+- I limited the amount of trades the algorithm could do by giving it initial values for `Cash` and `Coins.` If it tried to buy some amount of BitCoin, but had no cash, it was not allowed to.
+-- This aspect of the process is outside the training of the RNN, and could lead to the results we see above
 ###Learning Progress
+10000 iterations (progress plotted for every 20th episode)
+![Progress](src/reward_curve_sgd.png)
+1000 iterations (using Nadam optimizer instead of SGD)
+![progress](src/reward_curve.png)
 
-![Progress](images/reward_curve_sgd.png)
-![progress](images/reward_curve.png)
+These learning progress plots are rather noisy, as is to be expected. I would expect that if I had had the time to let it run for a couple of days, the noise would decrease significantly. I also believe that my algorithm, with a few more tweaks, and running for more iterations (100,000 +), it could learn to be a very profitable Quant!
+
+The next step in this process is to organize the algorithm into classes and, eventually, engineer a form of NLP as another predictive feature. 
+
+##Why Reinforcement Learning?
 
 
 ### References
