@@ -11,6 +11,7 @@ import sys
 from twilio.rest import Client
 # Plotting and Viz libraries
 import matplotlib.pyplot as plt
+import matplotlib
 
 # Machine Learning Libs
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
@@ -23,7 +24,8 @@ from string import punctuation
 #Trading libraries
 import talib.abstract as ta
 from poloniex import Poloniex
-from tradingWithPython import backtest as bt
+# from tradingWithPython
+import backtest as bt
 import progressbar
 import ipdb
 from collections import deque
@@ -80,7 +82,7 @@ class Model(object):
                        stateful=False))
         model.add(Dropout(drop[0]))
 
-        model.add(LSTM(32,
+        model.add(LSTM(64,
                        return_sequences=True,
                        stateful=False))
         model.add(Dropout(drop[1]))
@@ -106,7 +108,7 @@ class Model(object):
         polo_api = os.environ['POLO_API']
         polo_secret = os.environ['POLO_SECRET_KEY']
         if is_pkld:
-            scaled_prices = joblib.load('../data/scaled_{}coins_prices.pkl'.format(len(self.symbols)))
+            scaled_prices = joblib.load('../data/prices_{}coins.pkl'.format(len(self.symbols)))
         else:
             sym_price = []
             a = []
@@ -126,12 +128,12 @@ class Model(object):
             prices = pd.DataFrame(data = np.hstack([i.values for i in sym_price]), index = sym_price[0].index,columns = pd.MultiIndex.from_tuples([i for i in zip(a,b)]))
             joblib.dump(prices, '../data/prices_{}coins.pkl'.format(len(self.symbols)))
             scaled_prices = prices.copy()
-            for s in self.symbols:
-                for i in prices[s].columns:
-                    scaler = StandardScaler(with_mean = False)
-                    scaled_prices[s][i] = scaler.fit_transform(prices[s][i].reshape(-1,1)).flatten()
-                    joblib.dump(scaler, '../data/{}_{}_standardScaler.pkl'.format(s, i))
-            joblib.dump(scaled_prices, '../data/scaled_{}coins_prices.pkl'.format(s))
+            # for s in self.symbols:
+            #     for i in prices[s].columns:
+            #         scaler = StandardScaler(with_mean = False)
+            #         scaled_prices[s][i] = scaler.fit_transform(prices[s][i].reshape(-1,1)).flatten()
+            #         joblib.dump(scaler, '../data/{}_{}_standardScaler.pkl'.format(s, i))
+            # joblib.dump(scaled_prices, '../data/scaled_{}coins_prices.pkl'.format(s))
         self.data_size = min(quantity, len(scaled_prices))
 
         self.X_train, self.X_test = self.split_data(scaled_prices, self.data_size, 0.2)
@@ -203,8 +205,11 @@ class Model(object):
             # print(trades)
             # for i in range(len(self.symbols)):
             term = False
-            # import ipdb; ipdb.set_trace()
-            trades[step] = mask[action]
+            try:
+                trades[step] = mask[action]
+            except ValueError:
+                import ipdb; ipdb.set_trace()
+
                 # import ipdb; ipdb.set_trace()
             step += 1
             # print(step)
@@ -224,40 +229,46 @@ class Model(object):
         elif evaluate == True and term == True:
             for i in range(len(self.symbols)):
                 # ipdb.set_trace()
-                scaler = joblib.load('../data/{}_close_standardScaler.pkl'.format(self.symbols[i]))
-                close = scaler.inverse_transform(prices[:,i].reshape(-1,1)).flatten()
-                b_test = bt.Backtest(pd.Series(data=close, index = np.arange(len(trades))), pd.Series(data = trades[:,i]) ,roundShares = False, initialCash = self.init_cash, signalType='shares')
+                # scaler = joblib.load('../data/close_standardScaler.pkl')
+                # close = scaler.inverse_transform(prices[i,:].reshape(-1,1)).flatten()
+                close = self.data_test[:,0,0]
+
+                b_test = bt.Backtest(pd.Series(data=prices[i,:], index = np.arange(len(trades))), pd.Series(data = trades[:,i]) ,roundShares = False, initialCash = self.init_cash, signalType='shares')
                 # bestowal[i] = ((b_test.data['price'].iloc[-1] -b_test.data['price'].iloc[-2]) * b_test.data['shares'].iloc[-2])
+                b_test2 = bt.Backtest(pd.Series(data=close, index = np.arange(len(trades))), pd.Series(data = trades[:,i]) ,roundShares = False, initialCash = self.init_cash, signalType='shares')
+
                 bestowal[i] = b_test.pnl.iloc[-1]
                 if (plot == True) and ((epoch % 20 == 0) or epoch == 1):
-                    plt.figure(figsize = (12,20))
-                    ax = plt.subplot(6,1,1)
-                    b_test.plotTrades()
+                    matplotlib.rcParams['font.size'] = 24
+                    f = plt.figure(figsize = (12,12))
+                    ax1 = f.add_subplot(2,1,1)
+                    b_test2.plotTrades()
                     plt.axvline(x=round(self.data_size*0.8), color='black', linestyle='--')
                     # plt.text(250, 400, 'training data')
                     # plt.text(450, 400, 'test data')
-                    plt.subplot(6,1,2, sharex = ax)
-                    b_test.data.netProfit.plot(color = 'green')
-                    b_test.pnl.plot(color = 'red')
+                    ax2 = f.add_subplot(2,1,2)
+                    ax2.plot(b_test2.data.netProfit, color = 'green', label = 'Net Profit')
+                    ax2.plot(b_test2.pnl ,color = 'k', label = 'Adj. Profit')
                     plt.title('Profit and Loss')
-                    plt.subplot(6,1,3,sharex = ax)
-                    b_test.data.value.plot(label = 'value')
-                    b_test.data.cash.plot(label = 'cash')
-                    plt.title('Cash and Coin')
                     plt.legend()
-                    plt.subplot(6,1,4,sharex = ax)
-                    for y, label in zip(np.array(qs)[:,0,0,:].T, ['Hold','Buy','Sell','Hold']):
-                        plt.plot(y, label = label) #/np.vstack([np.array(qs)[:,0,0,:].sum(axis = 1)]*4).T
-                    plt.legend(loc = 'best')
-                    plt.title('Q-Values')
-                    plt.subplot(6,1,5,sharex = ax)
-                    plt.plot(np.argmax(np.array(qs)[:,0,0,:], axis = 1))
-                    plt.title('Max Q-value')
-                    plt.subplot(6,1,6,sharex = ax)
-                    b_test.data.shares.plot()
-                    plt.title('Total Coins')
-                    plt.legend()
-                    plt.suptitle(self.symbols[i]+ ': Epoch --' + str(epoch))
+                    # plt.subplot(6,1,3,sharex = ax)
+                    # b_test2.data.value.plot(label = 'value')
+                    # b_test2.data.cash.plot(label = 'cash')
+                    # plt.title('Cash and Coin')
+                    # plt.legend()
+                    # plt.subplot(6,1,4,sharex = ax)
+                    # for y, label in zip(np.array(qs)[:,0,0,:].T, ['Hold','Buy','Sell','Hold']):
+                    #     plt.plot(y, label = label) #/np.vstack([np.array(qs)[:,0,0,:].sum(axis = 1)]*4).T
+                    # plt.legend(loc = 'best')
+                    # plt.title('Q-Values')
+                    # plt.subplot(6,1,5,sharex = ax)
+                    # plt.plot(np.argmax(np.array(qs)[:,0,0,:], axis = 1))
+                    # plt.title('Max Q-value')
+                    # plt.subplot(6,1,6,sharex = ax)
+                    # b_test2.data.shares.plot()
+                    # plt.title('Total Coins')
+                    # plt.legend()
+                    # plt.suptitle(self.symbols[i]+ ': Epoch --' + str(epoch))
                     plt.savefig('../images/{}_{}sgd_summary.png'.format(self.symbols[i], epoch),bbox_inches = 'tight',pad_inches = 0.5, dpi = 60)
                     plt.close('all')
                     self.init_cash = 1000
@@ -282,16 +293,19 @@ class Model(object):
         # import ipdb; ipdb.set_trace()
 
         while not term:
-            qs = self.rnn.predict(state)
+            scaler = joblib.load('../data/close_standardScaler.pkl')
+            state = scaler.transform(state[0,:,:])[np.newaxis, :,:]
+            qs = self.rnn.predict_on_batch(state)
             action = np.argmax(qs, axis = 2).flatten()
             values.append(qs)
 
             # actions.append(action)
-            if step +1 == len(eval_data):
+            if step +1 >= len(eval_data):
                 term = True
 
             state_prime, step, trades, term = self.act(eval_data, state, action, trades, step)
             state = state_prime
+            step +1
             if term:
                 bestowal = self.bestow(state_prime, step, action, closeT, trades,qs = values, term = term,epoch = ep, plot = term, evaluate = term)
                 # import ipdb; ipdb.set_trace()
@@ -355,14 +369,17 @@ class Model(object):
                 stateT,pT = self.init_state(self.X_t, test = True)
                 trades = np.array([np.zeros(len(self.symbols))]*len(self.data_test))
                 t_data = self.data_test
-                close = pT
-                state = stateT
+                # close = pT
+                # state = stateT
             else:
                 trades = np.array([np.zeros(len(self.symbols))]*quantity)
                 # trades = pd.Series(data = [[0]*(len(self.symbols))]*len(self.data), index = np.arange(len(self.data)))
                 t_data = self.data[l:l+quantity]
-                state = t_data[0:1,:,:]
-                close = p[:,l:l+quantity]
+            scaler = StandardScaler(with_mean = False)
+            t_data = np.expand_dims(scaler.fit_transform(t_data[:,0,:]),axis = 1)
+            joblib.dump(scaler, '../data/close_standardScaler.pkl')
+            state = t_data[0:1,:,:]
+            close = p[:,l:l+quantity]
             go = True
             term = False
 
@@ -443,7 +460,7 @@ class Model(object):
                     go = False
 
             if ( (i+1) % 20 == 0 ) or ( i == 0 ) :
-                epoch_bestowal = self.eval_Q(self.data[l:l+quantity], ep = i+1)
+                epoch_bestowal = self.eval_Q(self.data_test, ep = i+1)
                 learning_progress.append(epoch_bestowal)
             else:
                 epoch_bestowal = None
