@@ -111,4 +111,40 @@ class DiscreteAgent(Agent):
         progbar = Progbar(epochs)
 
         for i in range(epochs):
-            
+            env.reset()
+            term = False
+            loss = 0
+            rewards = 0
+            obs_t = env.observe
+
+            while not term:
+                obs_tm1 = obs_t
+                action = self.policy(obs_tm1, train = True)
+                obs_t, reward, term = env.update(action)
+                rewards += reward
+
+                self.remember(obs_tm1, action, reward, obs_t, term)
+
+                loss += self.update(batch_size = batch_size,
+                                    exp_batch_size = exp_batch_size,
+                                    gamma = gamma)
+                if verbose == 1:
+                    progbar.add(1, values[('loss', loss), ('rewards',rewards)])
+
+        def trade(self, env, epochs = 1, batch_size = 1, verbose = 1):
+            print("Beginning Trade Testing")
+            progbar = Progbar(epochs)
+
+            for i in range(epochs):
+                env.reset()
+                term = False
+                loss = 0
+                rewards = 0
+                obs_t = env.observe
+                while not term:
+                    obs_tm1 = obs_t
+                    action = self.policy(obs_tm1, train = False)
+                    obs_t, reward, term = env.update(action)
+                    rewards += reward
+                if verbose == 1:
+                    progbar.add(1, values = [('loss',loss),('rewards',rewards)])

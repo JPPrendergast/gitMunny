@@ -35,12 +35,14 @@ class MarketData(object):
     p_secret : str
         Poloniex secret token
     '''
-    def __init__(self, start, end, period):
+    def __init__(self, start, end, period, init_cash = 1000, init_coins = 2):
         self.start = start
         self.end = end
         self.period = period
         self.p_key = os.environ['POLO_API']
         self.p_secret = os.environ['POLO_SECRET_KEY']
+        self.init_cash = init_cash
+        self.init_coins = init_coins
 
 
 class BitcoinData(MarketData):
@@ -76,13 +78,16 @@ class BitcoinData(MarketData):
         sma28 = ta.SMA(X, timeperiod = 28)
         rsi = ta.RSI(X, timeperiod = 8)
         atr = ta.ATR(X, timeperiod = 8)
-        value = np.zeros(len(X)).reshape(-1,1)
-        cash = np.zeroes(len(X)).reshape(-1,1)
-        return np.nan_to_num(np.vstack([close, diff, sma8, sma28, rsi, atr, value,cash]))
+        return np.nan_to_num(np.vstack([close, diff, sma8, sma28, rsi, atr]))
+
 
     def random_train_data(self, num_prices):
         h = np.random.randint(len(train_data)-num_prices)
-        return self.train_data[h:h+num_prices]
+        out = self.train_data[h:h+num_prices]
+        out[0,7] = self.init_cash
+        out[0, 8] = out[0,7] + (self.init_coins * out[0,0])
+        return out
+
 
     # @property
     # def close_train(self):
@@ -91,25 +96,6 @@ class BitcoinData(MarketData):
     # @property
     # def close_test(self):
     #     return(self.test_data[:,0])
-    #
-    #
-    # @property
-    # def value_train(self):
-    #     return(self.train_data[:,-2])
-    #
-    # @property
-    # def value_test(self):
-    #     return(self.test_data[:,-2])
-    #
-    # @property
-    # def cash_train(self):
-    #     return(self.train_data[:,-1])
-    #
-    #
-    # @property
-    # def cash_test(self):
-    #     return(self.test_data[:,-1])
-
 
 
 
