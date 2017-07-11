@@ -81,9 +81,9 @@ class Backtest(object):
         """
 
         #TODO: add auto rebalancing
-        if len(signal) > 10:
-            cash = initialCash-(signal*price).cumsum()
-            signal[cash<0] = (signal[cash<0] - abs(signal[cash<0]))/2
+        # if len(signal) > 10:
+        #     cash = initialCash-(signal*price).cumsum()
+        #     signal[cash<0] = (signal[cash<0] - abs(signal[cash<0]))/2
             # import ipdb; ipdb.set_trace()
         # check for correct input
         assert signalType in ['capital','shares'], "Wrong signal type provided, must be 'capital' or 'shares'"
@@ -169,13 +169,13 @@ class Backtest(object):
         #colored line for long positions
         idx = (self.data['trades'] > 0) | (self.data['trades'].shift(-1) > 0)
         if idx.any():
-            p[idx].plot(style='go', alpha = 0.7, markersize = 2)
+            p[idx].plot(style='go', markersize = 4)
             l.append('long')
 
         #colored line for short positions
         idx = (self.data['trades'] < 0) | (self.data['trades'].shift(-1) < 0)
         if idx.any():
-            p[idx].plot(style='ro', alpha = 0.7, markersize = 2)
+            p[idx].plot(style='ro', markersize = 4)
             l.append('short')
 
         plt.xlim([p.index[0],p.index[-1]]) # show full axis

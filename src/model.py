@@ -12,11 +12,12 @@ from twilio.rest import Client
 # Plotting and Viz libraries
 import matplotlib.pyplot as plt
 import matplotlib
+import json
 
 # Machine Learning Libs
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from sklearn.externals import joblib
-from keras.models import Sequential
+from keras.models import Sequential, load_model
 from keras.layers.core import Dense, Activation, Dropout
 from keras.layers.recurrent import LSTM
 from keras.optimizers import Adam, Nadam
@@ -26,7 +27,7 @@ import talib.abstract as ta
 from poloniex import Poloniex
 # from tradingWithPython
 import backtest as bt
-import progressbar
+# import progressbar
 import ipdb
 from collections import deque
 
@@ -114,7 +115,7 @@ class Model(object):
             a = []
             b = []
             for i in self.symbols:
-                c = pd.DataFrame.from_records(Poloniex(key = polo_api, secret = polo_secret).returnChartData(currencyPair = 'USDT_' + i, start = start, end = end, period = period), index = 'date')
+                c = pd.DataFrame.from_records(Poloniex().returnChartData(currencyPair = 'USDT_' + i, start = start, end = end, period = period), index = 'date')
                 c.index = pd.to_datetime(c.index*1e9)
                 c = c.apply(lambda s: pd.to_numeric(s))
                 sym_price.append(c)
@@ -185,6 +186,26 @@ class Model(object):
             self.data = data
         return state, close
 
+    def predict_for_api(self, num, funds, risk = 0.5):
+        self.rnn = load_model('../data/model{}sgd.h5'.format(num))
+        end = time.time()
+        start = end - (604800/4)
+        period = 300
+        self.load_data((end-start)/period, start = start, end = end, period = period, is_pkld = False, test = True)
+        q, trade, close = self.test()
+        if trade == 1:
+            p = 'Buy'
+        elif trade == 2:
+            p = 'Sell'
+        else:
+            p = 'Hold'
+
+        if trade in (1,2):
+            value = q.flatten()[trade]/sum(abs(q.flatten()))
+        else:
+            value = 0
+        # import ipdb; ipdb.set_trace()
+        return json.dumps({"Datetime": end, "Trade": p, "Price": close, "Amount": "${}".format(round(value[0]*risk*float(funds), 2))})
 
     def act(self,indata, state, action, trades, step):
         '''
@@ -350,7 +371,7 @@ class Model(object):
         h = 0
         st_mem = deque([])
 
-        learning_progress = [] #Stores state, Action, reward (bestowal :) ) and next state
+        self.learning_progress = [] #Stores state, Action, reward (bestowal :) ) and next state
         # reinforcement learning loop
         t0 = time.time()
 
@@ -461,7 +482,7 @@ class Model(object):
 
             if ( (i+1) % 20 == 0 ) or ( i == 0 ) :
                 epoch_bestowal = self.eval_Q(self.data_test, ep = i+1)
-                learning_progress.append(epoch_bestowal)
+                self.learning_progress.append((i+1, epoch_bestowal))
             else:
                 epoch_bestowal = None
                 # print(epoch_bestowal[-1])
@@ -494,26 +515,33 @@ class Model(object):
         print('Reinforcement Learning Completed in {} seconds'.format(round(eval_time,2)))
         print(' -- {} seconds per Epoch\n'.format(round(eval_time/epochs,2)))
         plt.figure(figsize = (12,8))
-        plt.plot(learning_progress, label = 'Reward per Epoch')
+        plt.plot(self.learning_progress[:,0], self.learning_progress[:,1], label = 'Reward per Epoch', color = 'b', alpha = 0.8)
+        plt.plot(self.learning_progress[:,0],moving_average(self.learning_progress[:,1]), label = 'moving average', color = 'k')
         plt.savefig('reward_curve_sgd.png')
+        plt.legend()
+        plt.ylabel('Reward')
+        plt.xlabel('Epoch')
         plt.close('all')
 
 
 
 
-    def test(self, ep):
+    def test(self):
         #load model here
         bestowal = []
-        self.load_data(np.inf, is_pkld = True, test = True)
+        # self.load_data(np.inf, is_pkld = True, test = True)
         state, closeT = self.init_state(self.X_t, test = True)
         trades = np.array([np.zeros(len(self.symbols))]*len(self.data_test))
-        step = 14
-        state = self.data_test[step:step+1, :,:]
+        # step = 14
+        # state = self.data_test[step:step+1, :,:]
         values = []
         actions = []
         term = False
+        scaler = joblib.load('../data/close_standardScaler.pkl')
+        step = 1
         while not term:
-            qs = self.rnn.predict_on_batch(state)
+            st = scaler.transform(state[0,:,:])[np.newaxis, :,:]
+            qs = self.rnn.predict_on_batch(st)
             # if abs(qs[:,:,1] - qs[:,:,2]) < abs(qs[:,:,2]*0.1):
             #     action = np.zeros(len(self.symbols)).astype(int)
             # else:
@@ -521,6 +549,7 @@ class Model(object):
             #     action = [np.zeros(len(self.symbols)).astype(int),np.argmax(qs, axis = 2)[0,:]][np.random.choice(2)]
             action = np.argmax(qs, axis = 2)[0]
             values.append(qs)
+            print(qs)
             actions.append(action)
             # print(action)
             if step +1 == len(self.data_test):
@@ -533,25 +562,26 @@ class Model(object):
                 # ipdb.set_trace()
                 # print(qs)
 
-                for i, s in enumerate(self.symbols):
-                    scaler = joblib.load('../data/{}_close_standardScaler.pkl'.format(s))
-                    close = scaler.inverse_transform(closeT)
-                    b_test = bt.Backtest(pd.Series(data=close[i,:], index = np.arange(len(trades))), pd.Series(data = [j[i] for j in trades]) , initialCash = self.init_cash, roundShares = False, signalType='shares')
-                    b_test.data['delta'] = b_test.data['shares'].diff().fillna(0)
-                    plt.figure(figsize = (12,8))
-                    plt.subplot(2,1,1)
-                    b_test.plotTrades()
-                    plt.axvline(x=round(self.data_size*0.8), color='black', linestyle='--')
-                    # plt.text(250, 400, 'training data')
-                    # plt.text(450, 400, 'test data')
-                    plt.subplot(2,1,2)
-                    b_test.pnl.plot()
-                    plt.suptitle(self.symbols[i] + str(ep))
-                    plt.savefig('../images/{}_{}TEST_summary.png'.format(self.symbols[i], ep),bbox_inches = 'tight',pad_inches = 0.5, dpi = 60)
-                    plt.close('all')
-                    self.init_cash = 1000
-                    joblib.dump(b_test.data, '../data/btest_test_{}{}.pkl'.format(s,i))
-                return bestowal, values, actions, closeT, b_test
+                # for i, s in enumerate(self.symbols):
+
+                    # scaler = joblib.load('../data/{}_close_standardScaler.pkl'.format(s))
+                    # close = scaler.inverse_transform(closeT)
+                    # b_test = bt.Backtest(pd.Series(data=close[i,:], index = np.arange(len(trades))), pd.Series(data = [j[i] for j in trades]) , initialCash = self.init_cash, roundShares = False, signalType='shares')
+                    # b_test.data['delta'] = b_test.data['shares'].diff().fillna(0)
+                    # plt.figure(figsize = (12,8))
+                    # plt.subplot(2,1,1)
+                    # b_test.plotTrades()
+                    # plt.axvline(x=round(self.data_size*0.8), color='black', linestyle='--')
+                    # # plt.text(250, 400, 'training data')
+                    # # plt.text(450, 400, 'test data')
+                    # plt.subplot(2,1,2)
+                    # b_test.pnl.plot()
+                    # plt.suptitle(self.symbols[i] + str(ep))
+                    # plt.savefig('../images/{}_{}TEST_summary.png'.format(self.symbols[i], ep),bbox_inches = 'tight',pad_inches = 0.5, dpi = 60)
+                    # plt.close('all')
+                    # self.init_cash = 1000
+                    # joblib.dump(b_test.data, '../data/btest_test_{}{}.pkl'.format(s,i))
+                return values[-1], actions[-1], closeT.flatten()[-1]
 
 
 if __name__ == '__main__':
@@ -567,7 +597,7 @@ if __name__ == '__main__':
     state, close = model.init_state(model.X_train, test = False)
     client = Client(account, twi_auth)
     try:
-        model.fit(epochs = 10000)
+        model.fit(epochs = 20000)
         message = client.messages.create(to=to_num, from_ = from_num, body = "COMPUTE FINISHED -- SUCCESS")
         # print(message.sid)
     except:
