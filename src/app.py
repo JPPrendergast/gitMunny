@@ -21,7 +21,7 @@ class TradePredict(Resource):
         '''
         m = Model(symbols = ['BTC'])
 
-        return m.predict_for_api(5280, self.funds)
+        return m.predict_for_api(5900, self.funds)
 
 api.add_resource(TradePredict, '/')
 
