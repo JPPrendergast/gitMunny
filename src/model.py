@@ -112,7 +112,7 @@ class Model(object):
         polo_api = os.environ['POLO_API']
         polo_secret = os.environ['POLO_SECRET_KEY']
         if is_pkld:
-            scaled_prices = joblib.load('../data/prices_{}coins.pkl'.format(len(self.symbols)))
+            scaled_prices = joblib.load('./data/prices_{}coins.pkl'.format(len(self.symbols)))
         else:
             sym_price = []
             a = []
@@ -130,14 +130,14 @@ class Model(object):
 
             # Form MultiIndexed DataFrame
             prices = pd.DataFrame(data = np.hstack([i.values for i in sym_price]), index = sym_price[0].index,columns = pd.MultiIndex.from_tuples([i for i in zip(a,b)]))
-            joblib.dump(prices, '../data/prices_{}coins.pkl'.format(len(self.symbols)))
+            joblib.dump(prices, './data/prices_{}coins.pkl'.format(len(self.symbols)))
             scaled_prices = prices.copy()
             # for s in self.symbols:
             #     for i in prices[s].columns:
             #         scaler = StandardScaler(with_mean = False)
             #         scaled_prices[s][i] = scaler.fit_transform(prices[s][i].reshape(-1,1)).flatten()
-            #         joblib.dump(scaler, '../data/{}_{}_standardScaler.pkl'.format(s, i))
-            # joblib.dump(scaled_prices, '../data/scaled_{}coins_prices.pkl'.format(s))
+            #         joblib.dump(scaler, './data/{}_{}_standardScaler.pkl'.format(s, i))
+            # joblib.dump(scaled_prices, './data/scaled_{}coins_prices.pkl'.format(s))
         self.data_size = min(quantity, len(scaled_prices))
 
         self.X_train, self.X_test = self.split_data(scaled_prices, self.data_size, 0.2)
@@ -190,7 +190,7 @@ class Model(object):
         return state, close
 
     def predict_for_api(self, num, funds, risk = 0.5):
-        self.rnn = load_model('../data/model{}sgd.h5'.format(num))
+        self.rnn = load_model('./data/model{}sgd.h5'.format(num))
         end = time.time()
         start = end - (604800/4)
         period = 300
@@ -253,7 +253,7 @@ class Model(object):
         elif evaluate == True and term == True:
             for i in range(len(self.symbols)):
                 # ipdb.set_trace()
-                # scaler = joblib.load('../data/close_standardScaler.pkl')
+                # scaler = joblib.load('./data/close_standardScaler.pkl')
                 # close = scaler.inverse_transform(prices[i,:].reshape(-1,1)).flatten()
                 close = self.data_test[:,0,0]
 
@@ -293,12 +293,12 @@ class Model(object):
                     # plt.title('Total Coins')
                     # plt.legend()
                     # plt.suptitle(self.symbols[i]+ ': Epoch --' + str(epoch))
-                    plt.savefig('../images/{}_{}sgd_summary.png'.format(self.symbols[i], epoch),bbox_inches = 'tight',pad_inches = 0.5, dpi = 60)
+                    plt.savefig('./images/{}_{}sgd_summary.png'.format(self.symbols[i], epoch),bbox_inches = 'tight',pad_inches = 0.5, dpi = 60)
                     plt.close('all')
                     self.init_cash = 1000
                 # print(trades)
         self.init_cash = 1000
-            # joblib.dump(b_test.data, '../data/epoch_{}_backtest.pkl'.format(epoch))
+            # joblib.dump(b_test.data, './data/epoch_{}_backtest.pkl'.format(epoch))
         return bestowal
 
     def eval_Q(self, eval_data, ep):
@@ -317,7 +317,7 @@ class Model(object):
         # import ipdb; ipdb.set_trace()
 
         while not term:
-            scaler = joblib.load('../data/close_standardScaler.pkl')
+            scaler = joblib.load('./data/close_standardScaler.pkl')
             state = scaler.transform(state[0,:,:])[np.newaxis, :,:]
             qs = self.rnn.predict_on_batch(state)
             action = np.argmax(qs, axis = 2).flatten()
@@ -402,7 +402,7 @@ class Model(object):
                 t_data = self.data[l:l+quantity]
             scaler = StandardScaler(with_mean = False)
             t_data = np.expand_dims(scaler.fit_transform(t_data[:,0,:]),axis = 1)
-            joblib.dump(scaler, '../data/close_standardScaler.pkl')
+            joblib.dump(scaler, './data/close_standardScaler.pkl')
             state = t_data[0:1,:,:]
             close = p[:,l:l+quantity]
             go = True
@@ -500,14 +500,14 @@ class Model(object):
             # if i % 5 == 4:
 
             if (i % 10 == 0):
-                self.rnn.save('../data/model{}sgd.h5'.format(i), overwrite = True)
+                self.rnn.save('./data/model{}sgd.h5'.format(i), overwrite = True)
                 #     self.test(ep = i)
             # serialize model to JSON
             # model_json = self.rnn.to_json()
-            # with open("../data/model{}.json".format(i), "w") as json_file:
+            # with open("./data/model{}.json".format(i), "w") as json_file:
             #     json_file.write(model_json)
             #     # serialize weights to HDF5
-            #     self.rnn.save_weights("../data/model{}.h5".format(i))
+            #     self.rnn.save_weights("./data/model{}.h5".format(i))
             #     print("Saved model to disk")
             # if (i +1 == epochs):
             #     go = input('Continue? y/[n]')
@@ -540,7 +540,7 @@ class Model(object):
         values = []
         actions = []
         term = False
-        scaler = joblib.load('../data/close_standardScaler.pkl')
+        scaler = joblib.load('./data/close_standardScaler.pkl')
         step = 1
         while not term:
             st = scaler.transform(state[0,:,:])[np.newaxis, :,:]
@@ -567,7 +567,7 @@ class Model(object):
 
                 # for i, s in enumerate(self.symbols):
 
-                    # scaler = joblib.load('../data/{}_close_standardScaler.pkl'.format(s))
+                    # scaler = joblib.load('./data/{}_close_standardScaler.pkl'.format(s))
                     # close = scaler.inverse_transform(closeT)
                     # b_test = bt.Backtest(pd.Series(data=close[i,:], index = np.arange(len(trades))), pd.Series(data = [j[i] for j in trades]) , initialCash = self.init_cash, roundShares = False, signalType='shares')
                     # b_test.data['delta'] = b_test.data['shares'].diff().fillna(0)
@@ -580,10 +580,10 @@ class Model(object):
                     # plt.subplot(2,1,2)
                     # b_test.pnl.plot()
                     # plt.suptitle(self.symbols[i] + str(ep))
-                    # plt.savefig('../images/{}_{}TEST_summary.png'.format(self.symbols[i], ep),bbox_inches = 'tight',pad_inches = 0.5, dpi = 60)
+                    # plt.savefig('./images/{}_{}TEST_summary.png'.format(self.symbols[i], ep),bbox_inches = 'tight',pad_inches = 0.5, dpi = 60)
                     # plt.close('all')
                     # self.init_cash = 1000
-                    # joblib.dump(b_test.data, '../data/btest_test_{}{}.pkl'.format(s,i))
+                    # joblib.dump(b_test.data, './data/btest_test_{}{}.pkl'.format(s,i))
                 return values[-1], actions[-1], closeT.flatten()[-1]
 
 

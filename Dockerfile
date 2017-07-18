@@ -2,11 +2,10 @@ FROM ubuntu:16.04
 
 ENV DEBIAN_FRONTEND noninteractive
 
-RUN apt-get update && apt-get install -y nvidia-cuda-toolkit \
-	python3 \
-	python-setuptools \
+RUN apt-get update && apt-get install -y python3 \
+	python3-setuptools \
 	python3-pip \
-	python-tk
+	python3-tk 
 
 COPY requirements.txt /requirements.txt
 COPY ta-lib-0.4.0-src.tar.gz /ta-lib.tar.gz 
@@ -18,14 +17,9 @@ RUN tar -xvzf ta-lib.tar.gz && \
 	make -s && \
 	make install && \
 	cd .. && \
-	pip install -r requirements.txt && \
-	pip install ta-lib
+	pip3 install -r requirements.txt && \
+	pip3 install ta-lib
 
-ADD . /ta-lib/
-ADD . /src/
-ADD . /data/
-RUN cd src && \
-	export CUDA_HOME=/opt/cuda && \
-	export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$CUDA_HOME/lib64:$CUDA_HOME/extras/CUPTI/lib64"
-
-WORKDIR .
+ADD . /gitMunny/
+	
+WORKDIR /gitMunny/

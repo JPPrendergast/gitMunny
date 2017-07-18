@@ -42,8 +42,15 @@ These learning progress plots are rather noisy, as is to be expected. I would ex
 
 The next step in this process is to organize the algorithm into classes and, eventually, engineer a form of NLP as another predictive feature.
 
-##Why Reinforcement Learning?
+## USING DOCKER
+To build the Dockerfile, run
+`sudo docker-compose build`
+then, to run the API, run
+`sudo docker-compose up`
 
+To hit the api, run
+`$curl http://<localhost>:80/ -d "funds=<funds to trade>" -X PUT`
+which will return a JSON object containing information regarding the trade recommendation.
 
 ### References
 -[The Self Learning Quant](https://hackernoon.com/the-self-learning-quant-d3329fcc9915)

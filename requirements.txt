@@ -6,6 +6,6 @@ pandas
 twilio
 matplotlib
 sklearn
-tensorflow-gpu
+tensorflow
 keras
 ipdb

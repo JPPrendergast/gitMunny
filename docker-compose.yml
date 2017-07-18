@@ -1,5 +1,5 @@
 web:
   build: .
-  command: python -u ./src/app.py
+  command: python3 -u /gitMunny/src/app.py
   ports:
-    - "5000:5000"
+    - "80:80"
