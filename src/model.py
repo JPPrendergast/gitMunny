@@ -32,11 +32,14 @@ import ipdb
 from collections import deque
 
 # Globals
-account = os.environ['TWILIO_API_KEY']
-twi_auth = os.environ['TWILIO_AUTH_TOKEN']
-to_num = os.environ['JOHN_NUM']
-from_num = os.environ['FROM_NUM']
-client = Client(account, twi_auth)
+try:
+    account = os.environ['TWILIO_API_KEY']
+    twi_auth = os.environ['TWILIO_AUTH_TOKEN']
+    to_num = os.environ['JOHN_NUM']
+    from_num = os.environ['FROM_NUM']
+    client = Client(account, twi_auth)
+except:
+    pass
 chump = []
 np.random.seed(42)
 
@@ -363,11 +366,11 @@ class Model(object):
         #reinforcement learning parameters
         gamma = 0.95
         explore = 1
-        mem_chunk = 3
+        mem_chunk = 8
 
 
         # "memory"
-        buffer = 6
+        buffer = 16
         h = 0
         st_mem = deque([])
 
@@ -375,12 +378,13 @@ class Model(object):
         # reinforcement learning loop
         t0 = time.time()
 
-        # bar = progressbar.ProgressBar(widgets=[' [', progressbar.Timer(), '] ',progressbar.Bar(),' (', progressbar.ETA(), ') '])
-        quantity = 84
-        bar =  progressbar.ProgressBar(widgets=[' [', progressbar.Timer(), '] ',progressbar.Bar(),' (', progressbar.ETA(), ') '], max_value = epochs * quantity).start()
+        quantity = 96
+        # bar =  progressbar.ProgressBar(widgets=[' [', progressbar.Timer(), '] ',progressbar.Bar(),' (', progressbar.ETA(), ') '], max_value = epochs * quantity).start()
+        bar = 0
         state,p = self.init_state(self.X_train, test = False)
         stateT,pT = self.init_state(self.X_t, test = True)
         for i in range(epochs):
+            print('%{} Completed'.format(i/epochs))
             l = np.random.randint(0, len(self.data)-quantity)
 
             # Set statespace for testing:
@@ -418,7 +422,6 @@ class Model(object):
             while go:
                 q_values = self.rnn.predict_on_batch(state)
 
-                bar+=1
                 # impliment exploration parameter!
                 if (np.random.rand() < explore):
                     action = np.random.randint(4, size = len(self.symbols))
@@ -593,7 +596,7 @@ if __name__ == '__main__':
     start = mktime(datetime(2013,1,1).timetuple())
     end = mktime(datetime(2017, 5,30).timetuple())
     model = Model(num_features = 7,symbols = coins)
-    model.load_data((end-start)/14400, start = start, end = end, period = 14400, test = False, is_pkld = True)
+    model.load_data(int((end-start)/900), start = start, end = end, period = 900, test = False, is_pkld = True)
     state, close = model.init_state(model.X_train, test = False)
     client = Client(account, twi_auth)
     try:

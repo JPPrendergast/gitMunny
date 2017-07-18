@@ -1,0 +1,5 @@
+web:
+  build: .
+  command: python -u ./src/app.py
+  ports:
+    - "5000:5000"

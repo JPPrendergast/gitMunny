@@ -1,0 +1,11 @@
+numpy
+Flask
+flask-restful
+poloniex
+pandas
+twilio
+matplotlib
+sklearn
+tensorflow-gpu
+keras
+ipdb
