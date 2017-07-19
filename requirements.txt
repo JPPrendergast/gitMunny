@@ -10,3 +10,4 @@ tensorflow
 keras
 ipdb
 gunicorn
+ta-lib
