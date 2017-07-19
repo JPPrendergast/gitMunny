@@ -25,8 +25,7 @@ from string import punctuation
 #Trading libraries
 import talib.abstract as ta
 from poloniex import Poloniex
-# from tradingWithPython
-import backtest as bt
+from tradingWithPython import backtest as bt
 # import progressbar
 import ipdb
 from collections import deque
