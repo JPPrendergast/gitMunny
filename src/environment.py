@@ -69,7 +69,7 @@ class Trader(Environment):
 
     def __init__(self, mkt, num_prices=84, init_cash=1000, init_coins=2, sell_coins=0.1):
         self.n_prices = num_prices
-        self.output_type = output_type
+        # self.output_type = output_type
         self.init_cash = init_cash
         self.init_coins = init_coins
         self.sell_coins = sell_coins
@@ -79,13 +79,24 @@ class Trader(Environment):
     def reset(self, test=False):
         if not test:
             n = self.n_prices
-            self.data = mkt.scaler.transform(mkt.random_train_data(n))
+            rand_data = self.mkt.random_train_data(n)
+            data = []
+            for i in range(rand_data.shape[0]):
+                data.append(self.mkt.scaler[i].transform(
+                    rand_data[i].reshape(1, -1)))
+            self.data = np.vstack(data)
         else:
-            self.data = mkt.scaler.transform(mkt.test_data)
-            self.n_prices = len(self.data)
-        self._state = np.array(
-            self.data[0, :], self.init_coins * self.data[0, 0], self.initialCash)
-        self._state_prime = self.data[1, :]
+            data = []
+            for i in range(self.mkt.test_data.shape[0]):
+                data.append(self.mkt.scaler[i].transform(
+                    test_data[i].reshape(1, -1)))
+            self.data = np.vstack(data)
+            self.n_prices = self.data.shape[1]
+        import ipdb
+        ipdb.set_trace()
+        self._state = np.array([
+            self.data[:, 0], self.init_coins * self.data[0, 0], self.init_cash])
+        self._state_prime = self.data[:, 1]
         self.step = 0
 
     def update(self, action):
@@ -103,20 +114,18 @@ class Trader(Environment):
         state_prime = self._state_prime
         mask = np.array([0, -self.sell_coins, self.sell_coins, 0])
         term = False
-        new_val = max(0, self.sp[-2] + (mask[action] * state[0]))
+        new_val = max(0, self.sp[-2] + (mask[action] * state[0][0]))[0]
         if new_val != 0:
-            new_cash = max(0, self.sp[-1] - (mask[action] * state[0]))
+            new_cash = max(0, self.sp[-1] - (mask[action] * state[0][0]))[0]
         else:
             new_cash = self.sp[-1]
 
         if new_cash == 0:
             new_val = self.sp[-2]
-
-        state_prime.extend(new_val, new_cash)
-        self._state_prime = state_prime
+        self._state_prime = [state_prime, new_val, new_cash]
 
     def reward(self):
-        return self._state_prime[6:].sum() - self._state[6:].sum()
+        return self._state_prime[-2:].sum() - self._state[-2:].sum()
 
     @property
     def observe(self):

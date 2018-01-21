@@ -57,7 +57,7 @@ class DiscreteAgent(Agent):
 
     def policy(self, observation, train=False):
         if train and np.random.rand() <= self.epsilon():
-            return[np.random.randint(o, self.num_actions)]
+            return[np.random.randint(0, self.num_actions)]
         else:
             return self.model.policy(observation, train)
 
@@ -109,8 +109,8 @@ class DiscreteAgent(Agent):
         '''
         print('Beginning gitMunny Learning\n')
         print("[Environment]: {}".format(env.description))
-        print("[Model]: {}".format(model.description))
-        print("[Memory]: {}".format(memory.description))
+        print("[Model]: {}".format(self.model.description))
+        print("[Memory]: {}".format(self.memory.description))
 
         if reset_memory:
             self.reset()
@@ -122,17 +122,17 @@ class DiscreteAgent(Agent):
             term = False
             loss = 0
             reward_total = 0
+            obs = env.observe
             close = []
-            obs_t = env.observe
 
             while not term:
-                obs_tm1 = obs_t
-                close.append()
-                action = self.policy(obs_tm1, train=True)
-                obs_t, reward, term = env.update(action)
+                obs_prime = env.sp
+                close.append(obs[0])
+                action = self.policy(obs_prime, train=True)
+                obs, reward, term = env.update(action)
                 reward_total += reward
 
-                self.remember(obs_tm1, action, reward, obs_t, term)
+                self.remember(obs_prime, action, reward, obs, term)
 
                 loss += self.update(batch_size=batch_size,
                                     exp_batch_size=exp_batch_size,
@@ -153,11 +153,11 @@ class DiscreteAgent(Agent):
                 term = False
                 loss = 0
                 rewards = 0
-                obs_t = env.observe
+                obs = env.observe
                 while not term:
-                    obs_tm1 = obs_t
-                    action = self.policy(obs_tm1, train=False)
-                    obs_t, reward, term = env.update(action)
+                    obs_prime = obs
+                    action = self.policy(obs_prime, train=False)
+                    obs, reward, term = env.update(action)
                     rewards += reward
                 if verbose == 1:
                     progbar.add(

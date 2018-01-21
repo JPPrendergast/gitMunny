@@ -57,28 +57,37 @@ class BitcoinData(MarketData):
 
     def __init__(self, start, end, period):
         super(BitcoinData, self).__init__(start, end, period)
+        self.scaler = MinMaxScaler(feature_range=(1, 1000))
+        self.pull_chart_data()
+
+    def init_scaler(self, train):
+        scalers = []
+        for i in range(train.shape[0]):
+            scaler = MinMaxScaler(feature_range=[1, 100])
+            scaler.fit(train[i, :].reshape(-1, 1))
+            scalers.append(scaler)
+        self.scaler = scalers
 
     def pull_chart_data(self):
-        start_year = pd.to_datetime(self.start, unit='s', format='%Y')
-        end_year = pd.to_datetime(self.end, unit='s', format='%Y')
+        start_year = pd.to_datetime(self.start, unit='s')  # , format='%Y'
+        end_year = pd.to_datetime(self.end, unit='s')  # , format='%Y'
         try:
             prices = pickle.load(
                 '../data/{}-{}_BTC'.format(start_year, end_year))
         except:
-            polo = Poloniex(key=self.p_key, secret=self.p_secret)
+            polo = Poloniex(apikey=self.p_key, secret=self.p_secret)
             prices = pd.DataFrame.from_records(polo.returnChartData(
                 currencyPair='USDT_BTC', start=self.start, end=self.end, period=self.period), index='date')
             prices = prices.apply(lambda x: pd.to_numeric(x))
-            pickle.dump(
-                prices, '../data/{}-{}_BTC'.format(start_year, end_year))
+            with open('../data/{}-{}_BTC'.format(start_year, end_year), 'wb') as f:
+                pickle.dump(prices, f)
 
         self.train = prices.iloc[0:int(len(prices) * 0.7)]
         self.test = prices.iloc[int(len(prices) * 0.7):]
-        self.scaler = MinMaxScaler(feature_range=(1, 1000))
 
         self.train_data = self.process_data(self.train)
         self.test_data = self.process_data(self.test)
-        self.scaler.fit(train_data)
+        self.init_scaler(self.train_data)
 
     def process_data(self, X):
         close = X['close']
@@ -91,8 +100,8 @@ class BitcoinData(MarketData):
         return np.nan_to_num(np.vstack([close, diff, sma8, sma28, rsi, atr]))
 
     def random_train_data(self, num_prices):
-        h = np.random.randint(len(train_data) - num_prices)
-        out = self.train_data[h:h + num_prices]
+        h = np.random.randint(self.train_data.shape[1] - num_prices)
+        out = self.train_data[:, h:h + num_prices]
         out[0, -2] = self.init_coins * out[0, 0]
         out[0, -1] = self.init_cash
         return out
