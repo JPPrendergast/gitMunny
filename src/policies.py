@@ -1,12 +1,14 @@
+from __future__ import absolute_import
 import numpy as np
 from keras import backend as K
-from keras.utils.generic_utils import get_from_module
+# from keras.utils.generic_utils import get_from_module
 
 
 class Policy(object):
     '''
     Base class
     '''
+
     def __init__(self):
         pass
 
@@ -19,19 +21,23 @@ class Policy(object):
     def max(*args, **kwargs):
         raise NotImplementedError
 
+
 class Max(Policy):
-    def __call__(self,values):
-        return K.max(values, axis = -1, keepdims = True)
+    def __call__(self, values):
+        return K.max(values, axis=-1, keepdims=True)
 
     @classmethod
     def policy(self, values):
-        return np.argmax(values, axis = -1)[np.newaxis].T
+        return np.argmax(values, axis=-1)[np.newaxis].T
 
+    @classmethod
+    def max(self, values):
+        return np.max(values, axis=-1)[np.newaxis].T
 
 
 class Maxrand(Policy):
     def __call__(self, values):
-        return K.max(values, axis = -1, keepdims = True)
+        return K.max(values, axis=-1, keepdims=True)
 
     @classmethod
     def policy(self, values):
@@ -40,12 +46,14 @@ class Maxrand(Policy):
 
     @classmethod
     def max(self, values):
-        return np.max(values, axis = -1)[np.newaxis].T
+        return np.max(values, axis=-1)[np.newaxis].T
 
-#aliases
+
+# aliases
 max = Max
 
 maxrand = Maxrand
 
-def get(identifier):
-    return get_from_module(identifier, globals(), 'policy', instantiate = True)
+#
+# def get(self, identifier):
+#     return get_from_module(identifier, globals(), 'policy', instantiate = True)

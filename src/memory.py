@@ -1,9 +1,13 @@
+from __future__ import absolute_import
+
 import numpy as np
+
 
 class Memory(object):
     '''
     Base class
     '''
+
     def __init__(self, *args, **kwargs):
         raise NotImplementedError
 
@@ -13,7 +17,7 @@ class Memory(object):
     def remember(self, state, action, bestowal, state_prime, term):
         raise NotImplementedError
 
-    def get_batch(batch_size =1):
+    def get_batch(batch_size=1):
         raise NotImplementedError
 
 
@@ -38,28 +42,29 @@ class ExperienceReplay(Memory):
     get_batch : callable
         sample elements form memory and experience and calculates input and desired outputs for training a model
     '''
-    def __init__(self, memory_length = 1, experience = None):
+
+    def __init__(self, memory_length=1, experience=None):
         self.memory_length = memory_length
         self.experience = experience
         self.memory = list()
 
-    def reset(self, experience = None):
+    def reset(self, experience=None):
         if experience:
             self.experience = experience
         self.memory = list()
 
     def remember(self, state, action, bestowal, state_prime, term):
         self.memory.append({
-            'state' : state,
+            'state': state,
             'action': action,
             'bestowal': bestowal,
             'state_prime': state_prime,
-            'term' : term
+            'term': term
         })
         if len(self.memory) > self.memory_length:
             del self.memory[0]
 
-    def get_batch(self, model, batch_size = 1, exp_batch_size = 0, gamma = 0.95, callback = None):
+    def get_batch(self, model, batch_size=1, exp_batch_size=0, gamma=0.95, callback=None):
         '''
         Get Batch
         get input, target samples from memory
@@ -92,13 +97,13 @@ class ExperienceReplay(Memory):
             batch_exp = 0
         bsize = batch_mem + batch_exp
         inputs = np.zeros((bsize,) + model.input_shape)
-        actions = np.zeros((bsize,1))
+        actions = np.zeros((bsize, 1))
         targets = np.zeros((bsize, 1))
 
-        #sample from memory
+        # sample from memory
 
-        h = np.random.randint(0, len(self.memory)-batch_mem)
-        rlst = np.arange(h, h+batch_mem)
+        h = np.random.randint(0, len(self.memory) - batch_mem)
+        rlst = np.arange(h, h + batch_mem)
         for i, m in enumerate(rlst):
             state = self.memory[m]['state']
             bestowal = self.memory[m]['bestowal']
@@ -109,26 +114,28 @@ class ExperienceReplay(Memory):
             if callback:
                 targets[i] = callback(model, state_prime)
             else:
-                targets[i] = bestowal + (gamma * model.max_values(state_prime, train = True))
+                targets[i] = bestowal + \
+                    (gamma * model.max_values(state_prime, train=True))
 
-        #sample from experience
+        # sample from experience
 
         if not self.experience and exp_batch_size > 0:
             return inputs, targets, actions
         else:
-            h = np.random.randint(0, len(self.memory)-batch_exp)
-            rlst = np.arange(h, h+batch_exp)
+            h = np.random.randint(0, len(self.memory) - batch_exp)
+            rlst = np.arange(h, h + batch_exp)
             for k, mem in enumerate(rlst):
                 state = self.memory[mem]['state']
                 bestowal = self.memory[mem]['bestowal']
                 state_prime = self.memory[mem]['state_prime']
-                inputs[i+k] = state.reshape((1,) + model.input_shape)
-                actions[i+k]= self.memory[mem]['action']
+                inputs[i + k] = state.reshape((1,) + model.input_shape)
+                actions[i + k] = self.memory[mem]['action']
                 state_prime = state_prime.reshape((1,) + model.input_shape)
                 if callback:
-                    targets[i+k] = callback(model, state_prime)
+                    targets[i + k] = callback(model, state_prime)
                 else:
-                    targets[i+k] = bestowal + (gamma * model.max_values(state_prime, train = False))
+                    targets[i + k] = bestowal + \
+                        (gamma * model.max_values(state_prime, train=False))
             return inputs, targets, actions
 
     @property

@@ -1,6 +1,9 @@
+from __future__ import absolute_import
+
 import numpy as np
 
 from keras.utils.generic_utils import Progbar
+
 
 class Agent(object):
     '''
@@ -12,6 +15,7 @@ class Agent(object):
         In this case, the RNN instantiated in ~src/model.py
     memory: Memory object
     '''
+
     def __init__(self, model, memory):
         self.model = model
         self.memory = memory
@@ -30,8 +34,9 @@ class DiscreteAgent(Agent):
     epsilon : callable
         a rule to define if model will explore or exploit
     '''
-    def __init__(self, model, memory, epsilon = None):
-        super(DiscreteAgent, self).__init__(model,memory)
+
+    def __init__(self, model, memory, epsilon=None):
+        super(DiscreteAgent, self).__init__(model, memory)
         if epsilon is None:
             epsilon = lambda *args: .1
         self.epsilon = epsilon
@@ -44,20 +49,21 @@ class DiscreteAgent(Agent):
             experience = None
         self.memory.reset(experience)
 
-    def values(self, observation, train = False):
+    def values(self, observation, train=False):
         return self.model.values(observation, train)
 
-    def max_values(self, observation, train = False):
+    def max_values(self, observation, train=False):
         return self.model.max_values(observation, train)
 
-    def policy(self, observation, train = False):
+    def policy(self, observation, train=False):
         if train and np.random.rand() <= self.epsilon():
             return[np.random.randint(o, self.num_actions)]
         else:
             return self.model.policy(observation, train)
 
-    def update(self, batch_size = 1, exp_batch_size = 0, gamma = 0.95, callback = None):
-        inputs, targets, actions = self.get_batch(self.model, batch_size = batch_size, exp_batch_size = exp_batch_size, gamma = gamma, callback = callback)
+    def update(self, batch_size=1, exp_batch_size=0, gamma=0.95, callback=None):
+        inputs, targets, actions = self.get_batch(
+            self.model, batch_size=batch_size, exp_batch_size=exp_batch_size, gamma=gamma, callback=callback)
         loss = self.model.update(inputs, targets, actions)
         return loss
 
@@ -75,10 +81,10 @@ class DiscreteAgent(Agent):
     def remember(self, state, action, bestowal, state_prime, term):
         self.memory.remember(state, action, bestowal, state_prime, term)
 
-    def get_batch(self, model, batch_size = 1, exp_batch_size = 0, gamma = 0.95, callback = None):
+    def get_batch(self, model, batch_size=1, exp_batch_size=0, gamma=0.95, callback=None):
         return self.memory.get_batch(model, batch_size, exp_batch_size, gamma, callback)
 
-    def learn(self, env, epochs=1, batch_size=1, exp_batch_size=0, gamma = 0.95, reset_memory = False, verbose = 1, callbacks = None):
+    def learn(self, env, epochs=1, batch_size=1, exp_batch_size=0, gamma=0.95, reset_memory=False, verbose=1, callbacks=None):
         '''
         Train agent (RNN) to interact with the environment
 
@@ -109,29 +115,36 @@ class DiscreteAgent(Agent):
         if reset_memory:
             self.reset()
         progbar = Progbar(epochs)
+        rewards = []
 
         for i in range(epochs):
             env.reset()
             term = False
             loss = 0
-            rewards = 0
+            reward_total = 0
+            close = []
             obs_t = env.observe
 
             while not term:
                 obs_tm1 = obs_t
-                action = self.policy(obs_tm1, train = True)
+                close.append()
+                action = self.policy(obs_tm1, train=True)
                 obs_t, reward, term = env.update(action)
-                rewards += reward
+                reward_total += reward
 
                 self.remember(obs_tm1, action, reward, obs_t, term)
 
-                loss += self.update(batch_size = batch_size,
-                                    exp_batch_size = exp_batch_size,
-                                    gamma = gamma)
+                loss += self.update(batch_size=batch_size,
+                                    exp_batch_size=exp_batch_size,
+                                    gamma=gamma)
                 if verbose == 1:
-                    progbar.add(1, values[('loss', loss), ('rewards',rewards)])
+                    progbar.add(
+                        1, values[('loss', loss), ('rewards', rewards)])
+            if self.epsilon > 0.1:
+                self.epsilon -= 1 / epochs
+            rewards.append(reward_total)
 
-        def trade(self, env, epochs = 1, batch_size = 1, verbose = 1):
+        def trade(self, env, epochs=1, batch_size=1, verbose=1):
             print("Beginning Trade Testing")
             progbar = Progbar(epochs)
 
@@ -143,8 +156,9 @@ class DiscreteAgent(Agent):
                 obs_t = env.observe
                 while not term:
                     obs_tm1 = obs_t
-                    action = self.policy(obs_tm1, train = False)
+                    action = self.policy(obs_tm1, train=False)
                     obs_t, reward, term = env.update(action)
                     rewards += reward
                 if verbose == 1:
-                    progbar.add(1, values = [('loss',loss),('rewards',rewards)])
+                    progbar.add(
+                        1, values=[('loss', loss), ('rewards', rewards)])

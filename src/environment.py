@@ -1,3 +1,4 @@
+from __future__ import absolute_import
 import numpy as np
 from tradingWithPython import backtest
 
@@ -22,6 +23,7 @@ class Environment(object):
     state : list
         Time-series representation of the environments state
     '''
+
     def __init__(self):
         raise NotImplementedError
 
@@ -46,6 +48,7 @@ class Environment(object):
     def description(self):
         raise NotImplementedError
 
+
 class Trader(Environment):
     '''
     Trader
@@ -63,19 +66,26 @@ class Trader(Environment):
         'close': Only use 'close' prices as feature
             State space size : 3
     '''
-    def __init__(self, data, output_type='full', init_cash = 1000, init_coins = 2, sell_coins = 0.1):
+
+    def __init__(self, mkt, num_prices=84, init_cash=1000, init_coins=2, sell_coins=0.1):
         self.n_prices = num_prices
         self.output_type = output_type
         self.init_cash = init_cash
         self.init_coins = init_coins
         self.sell_coins = sell_coins
-        self.data = data
-        self.num_prices = len(data)
+        # self.data = data
+        self.mkt = mkt
 
-
-    def reset(self):
-        self._state = np.array(self.data[0,:], self.init_coins*self.data[0,0], self.initialCash)
-        self._state_prime = self.data[1,:]
+    def reset(self, test=False):
+        if not test:
+            n = self.n_prices
+            self.data = mkt.scaler.transform(mkt.random_train_data(n))
+        else:
+            self.data = mkt.scaler.transform(mkt.test_data)
+            self.n_prices = len(self.data)
+        self._state = np.array(
+            self.data[0, :], self.init_coins * self.data[0, 0], self.initialCash)
+        self._state_prime = self.data[1, :]
         self.step = 0
 
     def update(self, action):
@@ -85,17 +95,17 @@ class Trader(Environment):
         self.step += 1
         term = self.term
         if not term:
-            self._state_prime = self.data[step+1]
+            self._state_prime = self.data[step + 1]
         return self.sp, reward, term
 
     def _update_state(self, action):
         state = self._state
         state_prime = self._state_prime
-        mask = np.array([0,-self.sell_coins,self.sell_coins, 0])
+        mask = np.array([0, -self.sell_coins, self.sell_coins, 0])
         term = False
-        new_val = max(0, self.sp[-2] + ( mask[action] * state[0] ))
+        new_val = max(0, self.sp[-2] + (mask[action] * state[0]))
         if new_val != 0:
-            new_cash = max(0, self.sp[-1] - ( mask[action] * state[0] ))
+            new_cash = max(0, self.sp[-1] - (mask[action] * state[0]))
         else:
             new_cash = self.sp[-1]
 
@@ -126,13 +136,6 @@ class Trader(Environment):
     @property
     def description(self):
         return "Trading Environment"
-
-
-
-
-
-
-
 
 
 '''
