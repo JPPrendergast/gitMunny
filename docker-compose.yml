@@ -1,4 +1,5 @@
 web:
+  restart: always
   build: .
   command: python3 -u /gitMunny/src/app.py
   ports:

@@ -9,5 +9,4 @@ sklearn
 tensorflow
 keras
 ipdb
-gunicorn
-ta-lib
+h5py
