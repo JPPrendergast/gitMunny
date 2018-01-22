@@ -9,3 +9,4 @@ sklearn
 tensorflow
 keras
 ipdb
+h5py
